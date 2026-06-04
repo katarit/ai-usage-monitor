@@ -1,0 +1,1 @@
+{"captured_at":"2026-06-03T10:30:00Z","rate_limits":{"five_hour":{"used_percentage":62.5,"resets_at":1780488000},"seven_day":{"used_percentage":50.0,"resets_at":1780879044}},"context_window":{"current_usage":{"input_tokens":8500,"output_tokens":1200,"cache_creation_input_tokens":300,"cache_read_input_tokens":4200},"used_percentage":6.5,"remaining_percentage":93.5}}
