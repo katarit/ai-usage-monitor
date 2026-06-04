@@ -2,8 +2,20 @@
 setlocal
 cd /d "%~dp0"
 set "PYTHONPATH=%CD%\src"
+
+set "PYTHON_CMD="
+where python >nul 2>nul
+if %ERRORLEVEL%==0 set "PYTHON_CMD=python"
+if not defined PYTHON_CMD if exist "%LOCALAPPDATA%\Python\pythoncore-3.14-64\python.exe" set "PYTHON_CMD=%LOCALAPPDATA%\Python\pythoncore-3.14-64\python.exe"
+if not defined PYTHON_CMD set "PYTHON_CMD=py"
+
+set "CLAUDE_ONLINE_ARGS=--claude-online-usage --claude-online-ttl 60"
+for %%A in (%*) do (
+  if "%%~A"=="--no-claude-online-usage" set "CLAUDE_ONLINE_ARGS="
+)
+
 if "%~1"=="" (
-  python -m ai_usage_monitor --watch --refresh 15
+  "%PYTHON_CMD%" -m ai_usage_monitor --watch --profile normal %CLAUDE_ONLINE_ARGS%
 ) else (
-  python -m ai_usage_monitor %*
+  "%PYTHON_CMD%" -m ai_usage_monitor %* %CLAUDE_ONLINE_ARGS%
 )

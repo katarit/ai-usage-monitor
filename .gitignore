@@ -5,3 +5,4 @@ __pycache__/
 venv/
 *.local.md
 .ai-usage-monitor/
+tests/_tmp/

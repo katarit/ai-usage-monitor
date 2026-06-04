@@ -53,10 +53,19 @@ class RateLimitWindow:
     window_minutes: int | None = None
     resets_at: datetime | None = None
     predicted_end: datetime | None = None
+    assumption: str | None = None
+    projected_used_percent: float | None = None
+    projection_source: str | None = None
 
     @property
     def remaining_percent(self) -> float:
         return max(100.0 - self.used_percent, 0.0)
+
+    @property
+    def projected_remaining_percent(self) -> float | None:
+        if self.projected_used_percent is None:
+            return None
+        return max(100.0 - self.projected_used_percent, 0.0)
 
 
 @dataclass
@@ -74,6 +83,9 @@ class ProviderSummary:
     rate_limits: list[RateLimitWindow] = field(default_factory=list)
     plan_type: str | None = None
     limit_source: str | None = None
+    token_source: str | None = None
+    snapshot_timestamp: datetime | None = None
+    source_status: str | None = None
     notes: list[str] = field(default_factory=list)
 
 

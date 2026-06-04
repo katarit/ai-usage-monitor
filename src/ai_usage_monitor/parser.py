@@ -26,7 +26,7 @@ CACHE_READ_KEYS = (
 )
 USAGE_KEYS = ("usage", "token_usage", "tokenUsage")
 MODEL_KEYS = ("model", "model_name", "modelName")
-TIME_KEYS = ("timestamp", "created_at", "createdAt", "time", "date")
+TIME_KEYS = ("captured_at", "timestamp", "created_at", "createdAt", "time", "date")
 
 
 def parse_json_lines(path: Path) -> Iterable[dict[str, Any]]:
@@ -78,7 +78,10 @@ def extract_event(provider: str, source: Path, obj: dict[str, Any]) -> UsageEven
 
 
 def first_usage_object(obj: dict[str, Any]) -> dict[str, Any] | None:
-    token_count_usage = token_count_last_usage(obj)
+    context_usage = context_window_usage(obj)
+    if context_usage is not None:
+        return context_usage
+    token_count_usage = token_count_usage_object(obj)
     if token_count_usage is not None:
         return token_count_usage
     for key in USAGE_KEYS:
@@ -95,7 +98,26 @@ def first_usage_object(obj: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def token_count_last_usage(obj: dict[str, Any]) -> dict[str, Any] | None:
+def context_window_usage(obj: dict[str, Any]) -> dict[str, Any] | None:
+    context_window = obj.get("context_window") or obj.get("contextWindow")
+    if not isinstance(context_window, dict):
+        return None
+    current_usage = context_window.get("current_usage") or context_window.get("currentUsage")
+    if isinstance(current_usage, dict):
+        return current_usage
+    usage = {}
+    if "total_input_tokens" in context_window:
+        usage["input_tokens"] = context_window["total_input_tokens"]
+    if "totalInputTokens" in context_window:
+        usage["input_tokens"] = context_window["totalInputTokens"]
+    if "total_output_tokens" in context_window:
+        usage["output_tokens"] = context_window["total_output_tokens"]
+    if "totalOutputTokens" in context_window:
+        usage["output_tokens"] = context_window["totalOutputTokens"]
+    return usage if has_any_token_key(usage) else None
+
+
+def token_count_usage_object(obj: dict[str, Any]) -> dict[str, Any] | None:
     if obj.get("type") != "event_msg":
         return None
     payload = obj.get("payload")
@@ -104,6 +126,9 @@ def token_count_last_usage(obj: dict[str, Any]) -> dict[str, Any] | None:
     info = payload.get("info")
     if not isinstance(info, dict):
         return None
+    value = info.get("total_token_usage")
+    if isinstance(value, dict):
+        return value
     value = info.get("last_token_usage")
     return value if isinstance(value, dict) else None
 
@@ -160,7 +185,12 @@ def extract_rate_limits(obj: dict[str, Any]) -> tuple[list[RateLimitWindow], str
     if rate_limits is None:
         return None
     windows: list[RateLimitWindow] = []
-    for key, label in (("primary", "5h"), ("secondary", "week")):
+    for key, label in (
+        ("five_hour", "5h"),
+        ("seven_day", "week"),
+        ("primary", "5h"),
+        ("secondary", "week"),
+    ):
         value = rate_limits.get(key)
         if isinstance(value, dict):
             window = rate_limit_window_from_dict(label, value)
