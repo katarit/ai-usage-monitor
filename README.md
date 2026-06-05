@@ -252,11 +252,11 @@ MIT License. See `LICENSE`.
 
 | 方針 | 理由 |
 | --- | --- |
-| 残り％を先に表示する | 作業中に一番知りたいのは、あとどれだけ使えるかだからです。 |
+| 残り％を先に表示 | 作業中に一番知りたいのは、あとどれだけ使えるかです。 |
 | 可能な限り provider が出す quota 値を使う | サブスクリプション上限は、ローカルの token 合計だけでは正確に再現できません。 |
 | token 詳細はローカルから読む | Tokens、Breakdown、Burn Rate、Activity はローカルの transcript/session から低負荷で取得できます。 |
-| Claude online quota は短時間キャッシュする | usage endpoint は model call ではありませんが、画面更新のたびに呼ぶ必要はありません。 |
-| 古いデータは明示する | 古い snapshot は、古いと分かる場合にだけ参考情報として使えます。 |
+| Claude online quota は短時間キャッシュ | usage endpoint は model call ではありませんが、画面更新のたびに呼ぶ必要はありません。 |
+| 古いデータは明示 | 古い snapshot も、いつ取得したものかが分かるなら参考情報として使えます。 |
 
 ### 表示項目
 
