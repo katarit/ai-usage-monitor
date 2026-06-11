@@ -6,6 +6,12 @@ Default usage is optimized for one-person local operation. Claude Code quota per
 
 ## English
 
+### Version
+
+Current version: `1.0.1`
+
+`1.0.1` fixes Claude quota source priority. Claude online usage snapshots are preferred over local statusLine `rate_limits`, because statusLine can be newer while still carrying reset-passed or fallback window state.
+
 ### Policy
 
 This monitor prioritizes accurate remaining quota over guessed token limits.
@@ -76,10 +82,10 @@ Source      quota changed 1m ago | token_count 12s ago | file updated 3s ago
 
 | Feature | Claude Code source | Codex source | Why this source |
 | --- | --- | --- | --- |
-| 5-hour quota percentage | `https://api.anthropic.com/api/oauth/usage` using the local Claude Code OAuth session | `%USERPROFILE%\.codex\sessions` `token_count.rate_limits.primary` | Quota percentages must come from provider-reported account/session data. Local token totals alone cannot reproduce subscription limits. |
-| Weekly quota percentage | Same Claude usage endpoint, `seven_day` | `%USERPROFILE%\.codex\sessions` `token_count.rate_limits.secondary` | Weekly limits are account-window limits, not raw transcript totals. |
+| 5-hour quota percentage | `https://api.anthropic.com/api/oauth/usage` using the local Claude Code OAuth session | Codex local session files, `token_count.rate_limits.primary` | Quota percentages must come from provider-reported account/session data. Local token totals alone cannot reproduce subscription limits. |
+| Weekly quota percentage | Same Claude usage endpoint, `seven_day` | Codex local session files, `token_count.rate_limits.secondary` | Weekly limits are account-window limits, not raw transcript totals. |
 | Reset time | Claude usage endpoint `resets_at` | Codex local `rate_limits.*.resets_at` | Reset timestamps are emitted with provider quota snapshots. |
-| Token breakdown | `%USERPROFILE%\.claude\projects\**\*.jsonl`, plus statusLine context when present | Codex `token_count.info.total_token_usage` and usage records | These local files are the most direct low-cost source for active token activity. |
+| Token breakdown | Claude Code transcript files, plus statusLine context when present | Codex `token_count.info.total_token_usage` and usage records | These local files are the most direct low-cost source for active token activity. |
 | Burn rate | Local timestamped Claude transcript/statusLine history | Local timestamped Codex session events | Burn rate needs multiple local observations; it does not require an online quota call. |
 | Plan label | Claude Code credentials metadata when available | Codex local rate-limit snapshot when available | Plan labels are informational only and should not be guessed. |
 | Projected quota | Not used | Codex 5-hour cumulative `token_count` delta after the last unchanged quota percentage, gated by staleness and token movement | Codex may update token activity earlier than quota percentage. The estimate is only a lag-compensation line, never a replacement for the official quota row. Weekly projection is avoided because current-session token deltas can overstate account-wide weekly movement. |
@@ -92,6 +98,7 @@ Source      quota changed 1m ago | token_count 12s ago | file updated 3s ago
 - Duplicate usage records are removed by message/request identity when available, otherwise by timestamp/model/token tuple.
 - Claude token totals are taken from the latest active transcript source after local transcript parsing.
 - Codex token totals prefer the latest cumulative `token_count.info.total_token_usage` from the active session file. This avoids summing old sessions into the current display.
+- Claude quota snapshots prefer the online usage endpoint. Local statusLine `rate_limits` are fallback data when online quota is unavailable.
 - Quota snapshots are extracted from provider-emitted `rate_limits`; manual token limits are not used for subscription quota percentages.
 
 ### Claude Online Usage
@@ -105,30 +112,30 @@ run.cmd
 It reads the access token from this priority order:
 
 1. `CLAUDE_CODE_OAUTH_TOKEN`
-2. `%USERPROFILE%\.claude\.credentials.json`
+2. Claude Code credentials file
 
 The monitor calls the Claude usage endpoint with the existing Claude Code OAuth session. This is a usage/quota request, not a model inference request, so it should not consume conversation tokens. The response is cached here for 60 seconds:
 
 ```text
-%USERPROFILE%\.ai-usage-monitor\claude-online-usage-cache.json
+AI usage monitor cache directory / claude-online-usage-cache.json
 ```
 
-The cache stores only sanitized quota fields and timestamps. It does not store the OAuth token. If the online request fails, the monitor falls back to the last cache or local statusLine snapshot and marks the source as stale.
+The cache stores only sanitized quota fields and timestamps. It does not store the OAuth token. If the online request fails, the monitor falls back to the last cache or local statusLine snapshot and marks the source as stale. When online quota is available, it takes priority over local statusLine `rate_limits`.
 
 ### Claude Local Token Flow
 
 Claude token details come from local transcript files:
 
 ```text
-%USERPROFILE%\.claude\projects
+Claude Code transcript directory
 ```
 
 The optional statusLine capture still helps when Claude Code provides context-window or rate-limit data locally:
 
 ```text
-%USERPROFILE%\.ai-usage-monitor\claude-statusline.json
-%USERPROFILE%\.ai-usage-monitor\claude-statusline-history.jsonl
-%USERPROFILE%\.ai-usage-monitor\claude-statusline-heartbeat.json
+AI usage monitor cache directory / claude-statusline.json
+AI usage monitor cache directory / claude-statusline-history.jsonl
+AI usage monitor cache directory / claude-statusline-heartbeat.json
 ```
 
 Diagnostic command:
@@ -142,7 +149,7 @@ scripts\diagnose_claude_statusline.cmd
 Codex is read from local session JSONL files:
 
 ```text
-%USERPROFILE%\.codex\sessions
+Codex session directory
 ```
 
 The monitor reads several fresh session candidates on every refresh, then prefers the active source's latest cumulative `token_count`. This avoids summing old sessions while increasing the chance of catching the active session. Codex account UI can still be ahead of local JSONL writes; `Source` shows `quota changed`, `token_count` age, and file update age so this lag is visible.
@@ -246,6 +253,12 @@ MIT License. See `LICENSE`.
 
 ## 日本語
 
+### バージョン
+
+現在のバージョン: `1.0.1`
+
+`1.0.1` では Claude quota source priority を修正しました。Claude の quota は online usage snapshot を優先します。local statusLine の `rate_limits` は、online snapshot より新しくても reset 済みや fallback の window 状態を含むことがあるため、fallback として扱います。
+
 ### 方針
 
 このモニターは、推測したトークン上限よりも、できるだけ正確な「残り使用量」を優先します。
@@ -316,10 +329,10 @@ Source      quota changed 1m ago | token_count 12s ago | file updated 3s ago
 
 | 機能 | Claude Code の取得元 | Codex の取得元 | そのデータを使う理由 |
 | --- | --- | --- | --- |
-| 5時間 quota % | ローカル Claude Code OAuth session で `https://api.anthropic.com/api/oauth/usage` を呼ぶ | `%USERPROFILE%\.codex\sessions` の `token_count.rate_limits.primary` | quota % は provider が持つ account/session データが必要です。ローカル token 合計だけでは subscription limit を再現できません。 |
-| 週間 quota % | 同じ Claude usage endpoint の `seven_day` | `%USERPROFILE%\.codex\sessions` の `token_count.rate_limits.secondary` | 週間上限は transcript 合計ではなく account window の値だからです。 |
+| 5時間 quota % | ローカル Claude Code OAuth session で `https://api.anthropic.com/api/oauth/usage` を呼ぶ | Codex local session files の `token_count.rate_limits.primary` | quota % は provider が持つ account/session データが必要です。ローカル token 合計だけでは subscription limit を再現できません。 |
+| 週間 quota % | 同じ Claude usage endpoint の `seven_day` | Codex local session files の `token_count.rate_limits.secondary` | 週間上限は transcript 合計ではなく account window の値だからです。 |
 | reset 時刻 | Claude usage endpoint の `resets_at` | Codex local `rate_limits.*.resets_at` | reset は provider quota snapshot と一緒に出る値です。 |
-| token breakdown | `%USERPROFILE%\.claude\projects\**\*.jsonl` と、存在する場合は statusLine context | Codex `token_count.info.total_token_usage` と usage records | active な token activity を低負荷に見るには、ローカルファイルが最も直接的です。 |
+| token breakdown | Claude Code transcript files と、存在する場合は statusLine context | Codex `token_count.info.total_token_usage` と usage records | active な token activity を低負荷に見るには、ローカルファイルが最も直接的です。 |
 | Burn Rate | timestamp 付き Claude transcript/statusLine history | timestamp 付き Codex session events | burn rate は複数のローカル観測点から計算でき、online quota call は不要です。 |
 | plan 表示 | 取得できる場合のみ Claude Code credentials metadata | 取得できる場合のみ Codex local rate-limit snapshot | plan は参考表示であり、推測表示は避けます。 |
 | Projected quota | 使いません | 5時間 quota % が変わらない間の Codex cumulative `token_count` 差分を、stale 時間と token 増分で制御して使用 | Codex は token activity が quota % より先に更新される場合があります。その遅れを、公式 quota 行を置き換えずに見えるようにします。週間枠は、現在セッションの token 差分だけで account-wide な週次変化を過大表示しやすいため推定しません。 |
@@ -332,6 +345,7 @@ Source      quota changed 1m ago | token_count 12s ago | file updated 3s ago
 - usage record は、message/request identity がある場合はそれで重複排除し、ない場合は timestamp/model/token tuple で重複排除します。
 - Claude token totals は local transcript を解析したうえで、最新の active transcript source を使います。
 - Codex token totals は active session file の最新 cumulative `token_count.info.total_token_usage` を優先します。これにより古い session を現在値へ合算しないようにします。
+- Claude quota snapshot は online usage endpoint を優先します。local statusLine の `rate_limits` は、online quota が使えない場合の fallback data として扱います。
 - quota snapshot は provider が出す `rate_limits` から抽出します。manual token limit は subscription quota % の計算には使いません。
 
 ### Claude Online Usage
@@ -345,30 +359,30 @@ run.cmd
 access token は次の順で読みます。
 
 1. `CLAUDE_CODE_OAUTH_TOKEN`
-2. `%USERPROFILE%\.claude\.credentials.json`
+2. Claude Code credentials file
 
 既存の Claude Code OAuth session を使って Claude usage endpoint を呼びます。これは usage/quota 確認であり、model inference ではないため、会話 token を消費する類の呼び出しではありません。レスポンスは 60 秒だけ次にキャッシュします。
 
 ```text
-%USERPROFILE%\.ai-usage-monitor\claude-online-usage-cache.json
+AI usage monitor cache directory / claude-online-usage-cache.json
 ```
 
-キャッシュするのは quota と timestamp だけです。OAuth token は保存しません。online request が失敗した場合は、最後の cache または local statusLine snapshot にフォールバックし、source を stale として表示します。
+キャッシュするのは quota と timestamp だけです。OAuth token は保存しません。online request が失敗した場合は、最後の cache または local statusLine snapshot にフォールバックし、source を stale として表示します。online quota が使える場合は、local statusLine の `rate_limits` より優先します。
 
 ### Claude Local Token Flow
 
 Claude の token 詳細は local transcript から読みます。
 
 ```text
-%USERPROFILE%\.claude\projects
+Claude Code transcript directory
 ```
 
 statusLine capture は、Claude Code が local に context-window や rate-limit を渡す場合の補助として引き続き使えます。
 
 ```text
-%USERPROFILE%\.ai-usage-monitor\claude-statusline.json
-%USERPROFILE%\.ai-usage-monitor\claude-statusline-history.jsonl
-%USERPROFILE%\.ai-usage-monitor\claude-statusline-heartbeat.json
+AI usage monitor cache directory / claude-statusline.json
+AI usage monitor cache directory / claude-statusline-history.jsonl
+AI usage monitor cache directory / claude-statusline-heartbeat.json
 ```
 
 診断コマンド:
@@ -382,7 +396,7 @@ scripts\diagnose_claude_statusline.cmd
 Codex は local session JSONL を読みます。
 
 ```text
-%USERPROFILE%\.codex\sessions
+Codex session directory
 ```
 
 monitor は毎回、複数の新しい session candidate を読み、active source の最新 cumulative `token_count` を優先します。これにより古い session を合算せず、active session を拾える確度を上げます。ただし Codex の account UI が local JSONL より先に更新される場合があります。その差は `Source` の `quota changed`、`token_count` age、file update age で見えるようにします。

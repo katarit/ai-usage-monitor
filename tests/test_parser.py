@@ -1,7 +1,8 @@
 from pathlib import Path
 from datetime import timedelta
 
-from ai_usage_monitor.providers import Provider, summarize
+from ai_usage_monitor.models import RateLimitWindow
+from ai_usage_monitor.providers import Provider, RateLimitSnapshot, summarize
 from ai_usage_monitor.models import utc_now
 from ai_usage_monitor.parser import extract_event
 from ai_usage_monitor.providers import extract_rate_limit_snapshot
@@ -54,6 +55,37 @@ def test_claude_statusline_fixture_collects_rate_limits():
     assert summary.rate_limits[0].assumption == "recovered"
     assert summary.rate_limits[1].used_percent == 50.0
     assert summary.plan_type is None
+
+
+def test_claude_online_quota_takes_priority_over_newer_statusline_snapshot():
+    now = utc_now()
+    stale_statusline = RateLimitSnapshot(
+        "claude-statusline.json",
+        now,
+        [
+            RateLimitWindow("5h", 1.0, resets_at=now - timedelta(minutes=1)),
+            RateLimitWindow("week", 0.0, resets_at=now + timedelta(days=1)),
+        ],
+        None,
+        {"rate_limits": "fresh", "context_window": "fresh"},
+    )
+    online_quota = RateLimitSnapshot(
+        "Claude online usage endpoint",
+        now - timedelta(seconds=30),
+        [
+            RateLimitWindow("5h", 65.0, resets_at=now + timedelta(hours=4)),
+            RateLimitWindow("week", 7.0, resets_at=now + timedelta(days=1)),
+        ],
+        "pro",
+        {"rate_limits": "online", "context_window": "local transcript"},
+    )
+
+    summary = summarize("Claude Code", [], 0, None, [], [stale_statusline, online_quota])
+
+    assert summary.limit_source == "Claude online usage endpoint"
+    assert summary.rate_limits[0].used_percent == 65.0
+    assert summary.rate_limits[0].assumption is None
+    assert summary.plan_type == "pro"
 
 
 def test_codex_projects_quota_when_token_count_moves_before_quota_refresh():
@@ -166,6 +198,7 @@ if __name__ == "__main__":
     test_claude_fixture_collects_usage()
     test_codex_fixture_collects_usage()
     test_claude_statusline_fixture_collects_rate_limits()
+    test_claude_online_quota_takes_priority_over_newer_statusline_snapshot()
     test_codex_projects_quota_when_token_count_moves_before_quota_refresh()
     test_codex_projection_stays_on_quota_before_stale_threshold()
     test_codex_projection_caps_token_count_adjustment()

@@ -12,6 +12,7 @@ from .pricing import estimate_cost
 CODEX_PROJECTION_MIN_STALE_SECONDS = 180
 CODEX_PROJECTION_MIN_UNREFLECTED_PERCENT = 0.5
 CODEX_PROJECTION_MAX_ADDED_PERCENT = 15.0
+CLAUDE_ONLINE_USAGE_SOURCE = "Claude online usage endpoint"
 
 
 @dataclass
@@ -162,7 +163,7 @@ def summarize(
     if not events:
         summary_notes.append("no observable token usage found")
 
-    latest_rate_limits = latest_rate_limit_snapshot(rate_limit_snapshots or [])
+    latest_rate_limits = latest_rate_limit_snapshot(name, rate_limit_snapshots or [])
     rate_limits = with_predicted_end(latest_rate_limits, rate_limit_snapshots or []) if latest_rate_limits else []
     if name.lower() == "codex" and rate_limits:
         rate_limits = with_codex_projection(rate_limits, events)
@@ -591,9 +592,15 @@ def parse_timestamp_from_obj(obj: dict):
     return None
 
 
-def latest_rate_limit_snapshot(snapshots: list[RateLimitSnapshot]) -> RateLimitSnapshot | None:
+def latest_rate_limit_snapshot(name: str, snapshots: list[RateLimitSnapshot]) -> RateLimitSnapshot | None:
     if not snapshots:
         return None
+    if name.lower() == "claude code":
+        online_snapshots = [
+            snapshot for snapshot in snapshots if snapshot.source == CLAUDE_ONLINE_USAGE_SOURCE
+        ]
+        if online_snapshots:
+            return max(online_snapshots, key=lambda snapshot: snapshot.timestamp or utc_now())
     return max(snapshots, key=lambda snapshot: snapshot.timestamp or utc_now())
 
 
