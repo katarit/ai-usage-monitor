@@ -43,7 +43,7 @@ This monitor prioritizes accurate remaining quota over guessed token limits.
 
 ### Example Output
 
-The following example uses dummy data only.
+The following example uses dummy data only, including reset-credit counts and timestamps.
 
 ```text
 AI LIMIT MONITOR
@@ -78,8 +78,8 @@ Activity    last 12:29 | events 128
 Quota Read  12s ago
 Source      quota changed 1m ago | token_count 12s ago | file updated 3s ago
 Reset Credits 2 available
-  #1  granted 2026-06-01 09:00:00 +0900 | expires 2026-07-01 09:00:00 +0900
-  #2  granted 2026-06-05 18:30:00 +0900 | expires 2026-07-05 18:30:00 +0900
+  #1  granted 2031-01-01 09:00:00 +0900 | expires 2031-02-01 09:00:00 +0900
+  #2  granted 2031-01-05 18:30:00 +0900 | expires 2031-02-05 18:30:00 +0900
 ```
 
 ### Data Sources
@@ -300,7 +300,7 @@ MIT License. See `LICENSE`.
 
 ### 表示例
 
-以下は完全なダミーデータです。
+以下は reset credit の件数・日時を含め、完全なダミーデータです。
 
 ```text
 AI LIMIT MONITOR
@@ -335,8 +335,8 @@ Activity    last 12:29 | events 128
 Quota Read  12s ago
 Source      quota changed 1m ago | token_count 12s ago | file updated 3s ago
 Reset Credits 2 available
-  #1  granted 2026-06-01 09:00:00 +0900 | expires 2026-07-01 09:00:00 +0900
-  #2  granted 2026-06-05 18:30:00 +0900 | expires 2026-07-05 18:30:00 +0900
+  #1  granted 2031-01-01 09:00:00 +0900 | expires 2031-02-01 09:00:00 +0900
+  #2  granted 2031-01-05 18:30:00 +0900 | expires 2031-02-05 18:30:00 +0900
 ```
 
 ### データ取得方法
