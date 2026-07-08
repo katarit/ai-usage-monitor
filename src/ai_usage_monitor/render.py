@@ -4,7 +4,7 @@ import json
 from dataclasses import asdict
 from datetime import datetime
 
-from .models import ProviderSummary, RateLimitWindow, TokenUsage
+from .models import ProviderSummary, RateLimitWindow, ResetCredit, TokenUsage
 
 
 BAR_WIDTH = 34
@@ -53,7 +53,7 @@ def render_summary(summary: ProviderSummary, max_observed: int, details: bool = 
 
     if summary.rate_limits:
         status = status_for_rate_limits(summary.rate_limits)
-        if is_stale(summary.snapshot_timestamp) and status != "ASSUMED RECOVERED":
+        if is_stale(summary.snapshot_timestamp):
             status = "STALE SNAPSHOT"
         title = summary.name.upper()
         if summary.plan_type:
@@ -68,6 +68,10 @@ def render_summary(summary: ProviderSummary, max_observed: int, details: bool = 
         lines.append(f"Quota Read  {paint_age(fmt_age(summary.snapshot_timestamp), color)}")
         if summary.source_status:
             lines.append(f"Source      {paint_source_status(summary.source_status, color)}")
+        if has_available_reset_credits(summary.reset_credits):
+            lines.extend(render_reset_credits(summary.reset_credits, color))
+            if details and summary.reset_credit_source:
+                lines.append(f"Credits Src {summary.reset_credit_source}")
         if details:
             lines.append(f"Files       {summary.files:,}")
             lines.append(f"Limit File  {summary.limit_source or 'unavailable'}")
@@ -122,6 +126,10 @@ def render_summary(summary: ProviderSummary, max_observed: int, details: bool = 
             f"Activity     {fmt_dt(summary.last_activity)}    events: {summary.events}    files: {summary.files}",
         ]
     )
+    if has_available_reset_credits(summary.reset_credits):
+        lines.extend(render_reset_credits(summary.reset_credits, color))
+        if details and summary.reset_credit_source:
+            lines.append(f"Credits Src  {summary.reset_credit_source}")
     if summary.notes:
         lines.append("Notes")
         lines.extend(f"  - {note}" for note in summary.notes)
@@ -150,6 +158,30 @@ def render_rate_limits(rate_limits: list[RateLimitWindow], color: bool = False) 
                 f"{paint_projected(projected_source, color, projected_from_tokens)}"
             )
     return lines
+
+
+def render_reset_credits(credits: list[ResetCredit], color: bool = False) -> list[str]:
+    available = [credit for credit in credits if credit.status == "available"]
+    available.sort(key=lambda item: (item.expires_at is None, item.expires_at or datetime.max))
+    count = paint_token_value(str(len(available)), color)
+    lines = [f"Reset Credits {count} available"]
+    for index, credit in enumerate(available, start=1):
+        lines.append(
+            f"  #{index:<2} granted {fmt_reset_credit_dt(credit.granted_at)} | "
+            f"expires {fmt_reset_credit_dt(credit.expires_at)}"
+        )
+    return lines
+
+
+def has_available_reset_credits(credits: list[ResetCredit]) -> bool:
+    return any(credit.status == "available" for credit in credits)
+
+
+def fmt_reset_credit_dt(value: datetime | None) -> str:
+    if value is None:
+        return "unknown"
+    local = value.astimezone()
+    return local.strftime("%Y-%m-%d %H:%M:%S %z")
 
 
 def rate_limit_sort_key(window: RateLimitWindow) -> int:
@@ -384,6 +416,8 @@ def paint_source_status(value: str, enabled: bool) -> str:
     for part in value.split(" | "):
         if "missing" in part or "unknown" in part or "unavailable" in part:
             parts.append(paint(part, "red", enabled))
+        elif "stale" in part:
+            parts.append(paint(part, "yellow", enabled))
         elif part.startswith("quota changed"):
             parts.append(paint(part, "yellow", enabled))
         elif part.startswith(("quota reset passed", "waiting provider refresh")):
