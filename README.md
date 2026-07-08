@@ -8,9 +8,9 @@ Default usage is optimized for one-person local operation. Claude Code quota per
 
 ### Version
 
-Current version: `1.0.1`
+Current version: `1.1.0`
 
-`1.0.1` fixes Claude quota source priority. Claude online usage snapshots are preferred over local statusLine `rate_limits`, because statusLine can be newer while still carrying reset-passed or fallback window state.
+`1.1.0` improves freshness labeling and adds Codex reset credit display. Claude token freshness and quota freshness are separated more clearly, Claude online quota lookups use a longer cache/backoff, and available Codex reset credits are shown as a supplemental line.
 
 ### Policy
 
@@ -39,6 +39,7 @@ This monitor prioritizes accurate remaining quota over guessed token limits.
 | `Activity` | Last token activity time and number of parsed events. |
 | `Quota Read` | Age of the quota snapshot read by the monitor. This can be fresh even when the value itself has not changed. |
 | `Source` | Freshness of quota and token sources, including `quota changed`, `token_count`, `transcript`, and `file updated`. |
+| `Reset Credits` | Codex supplemental lines shown only when available reset credits are found, with each credit's granted and expiration times. |
 
 ### Example Output
 
@@ -76,6 +77,9 @@ Tokens      2,076,000 observed
 Activity    last 12:29 | events 128
 Quota Read  12s ago
 Source      quota changed 1m ago | token_count 12s ago | file updated 3s ago
+Reset Credits 2 available
+  #1  granted 2026-06-01 09:00:00 +0900 | expires 2026-07-01 09:00:00 +0900
+  #2  granted 2026-06-05 18:30:00 +0900 | expires 2026-07-05 18:30:00 +0900
 ```
 
 ### Data Sources
@@ -89,6 +93,7 @@ Source      quota changed 1m ago | token_count 12s ago | file updated 3s ago
 | Burn rate | Local timestamped Claude transcript/statusLine history | Local timestamped Codex session events | Burn rate needs multiple local observations; it does not require an online quota call. |
 | Plan label | Claude Code credentials metadata when available | Codex local rate-limit snapshot when available | Plan labels are informational only and should not be guessed. |
 | Projected quota | Not used | Codex 5-hour cumulative `token_count` delta after the last unchanged quota percentage, gated by staleness and token movement | Codex may update token activity earlier than quota percentage. The estimate is only a lag-compensation line, never a replacement for the official quota row. Weekly projection is avoided because current-session token deltas can overstate account-wide weekly movement. |
+| Reset credits | Not used | Optional ChatGPT account reset-credit endpoint, sanitized and cached | Reset credits are not quota windows. They are displayed separately and are never used to alter remaining percentage. |
 | Freshness | Online cache age, statusLine capture age, transcript age | Token event age and session file mtime | Freshness explains whether the displayed data is live, cached, or stale. |
 
 ### Extraction Logic
@@ -114,13 +119,15 @@ It reads the access token from this priority order:
 1. `CLAUDE_CODE_OAUTH_TOKEN`
 2. Claude Code credentials file
 
-The monitor calls the Claude usage endpoint with the existing Claude Code OAuth session. This is a usage/quota request, not a model inference request, so it should not consume conversation tokens. The response is cached here for 60 seconds:
+The monitor calls the Claude usage endpoint with the existing Claude Code OAuth session. This is a usage/quota request, not a model inference request, so it should not consume conversation tokens. The response is cached here for 300 seconds:
 
 ```text
 AI usage monitor cache directory / claude-online-usage-cache.json
 ```
 
 The cache stores only sanitized quota fields and timestamps. It does not store the OAuth token. If the online request fails, the monitor falls back to the last cache or local statusLine snapshot and marks the source as stale. When online quota is available, it takes priority over local statusLine `rate_limits`.
+
+The Claude online usage endpoint is an undocumented helper used for this local monitor. To avoid treating it like a high-frequency official API, HTTP 429 responses trigger a short backoff.
 
 ### Claude Local Token Flow
 
@@ -161,6 +168,8 @@ The monitor reads several fresh session candidates on every refresh, then prefer
 
 The token-to-percent conversion uses the median of previous quota-increase intervals in the same reset window, with broad outlier filtering. A single refresh can add at most 15 percentage points to the provider value. This keeps short bursts from dominating the estimate while still making likely quota lag visible during active development.
 
+Codex reset credits are read separately when enabled by the launcher. The monitor stores only sanitized credit fields such as status, granted time, and expiration time in its local cache. Access tokens and account IDs are not printed or cached. If the reset-credit request fails, quota and token display continue normally.
+
 ### Refresh
 
 `run.cmd` starts watch mode:
@@ -184,7 +193,7 @@ Profiles:
 | `slow` | 30 seconds |
 | `--refresh N` | Custom seconds |
 
-Claude online quota is cached for 60 seconds by default, even though the terminal redraws every 15 seconds. Local Claude/Codex files are reread every redraw.
+Claude online quota and Codex reset credits are cached for 300 seconds by default, even though the terminal redraws every 15 seconds. Local Claude/Codex files are reread every redraw.
 
 ### Commands
 
@@ -209,7 +218,7 @@ run.cmd --once --full-scan
 Use fixture data:
 
 ```cmd
-run.cmd --once --no-claude-online-usage --claude-path tests\fixtures\claude-statusline.json --codex-path tests\fixtures\codex
+run.cmd --once --no-claude-online-usage --no-codex-reset-credits --claude-path tests\fixtures\claude-statusline.json --codex-path tests\fixtures\codex
 ```
 
 JSON output:
@@ -244,6 +253,7 @@ cmd.exe /c "set PYTHONPATH=src&& python tests\test_parser.py"
 - The monitor does not read browser cookies.
 - The Claude OAuth token is read only to call the usage endpoint and is not saved, printed, or cached.
 - The Claude online quota call is not a model inference call.
+- The Codex reset-credit lookup uses the existing local Codex OAuth session, caches only sanitized credit metadata, and does not change quota percentages.
 - Codex online/account usage endpoints are not used unless a stable local or official source is identified. Codex `Projected` is a local estimate and is labeled separately.
 - Unknown or malformed local log records are skipped.
 
@@ -255,9 +265,9 @@ MIT License. See `LICENSE`.
 
 ### バージョン
 
-現在のバージョン: `1.0.1`
+現在のバージョン: `1.1.0`
 
-`1.0.1` では Claude quota source priority を修正しました。Claude の quota は online usage snapshot を優先します。local statusLine の `rate_limits` は、online snapshot より新しくても reset 済みや fallback の window 状態を含むことがあるため、fallback として扱います。
+`1.1.0` では freshness 表示を改善し、Codex reset credit 表示を追加しました。Claude の token freshness と quota freshness をより明確に分け、Claude online quota は長めの cache/backoff を使い、利用可能な Codex reset credit は補助行として表示します。
 
 ### 方針
 
@@ -286,6 +296,7 @@ MIT License. See `LICENSE`.
 | `Activity` | 最終 token activity と parsed event 数。 |
 | `Quota Read` | monitor が quota snapshot を読んだ時刻からの経過時間。値自体が更新された時刻とは別です。 |
 | `Source` | `quota changed`、`token_count`、`transcript`、`file updated` など、quota と token source の鮮度。 |
+| `Reset Credits` | Codex の利用可能な reset credit が見つかった場合だけ表示する補助行。各券の付与日時と期限を表示します。 |
 
 ### 表示例
 
@@ -323,6 +334,9 @@ Tokens      2,076,000 observed
 Activity    last 12:29 | events 128
 Quota Read  12s ago
 Source      quota changed 1m ago | token_count 12s ago | file updated 3s ago
+Reset Credits 2 available
+  #1  granted 2026-06-01 09:00:00 +0900 | expires 2026-07-01 09:00:00 +0900
+  #2  granted 2026-06-05 18:30:00 +0900 | expires 2026-07-05 18:30:00 +0900
 ```
 
 ### データ取得方法
@@ -336,6 +350,7 @@ Source      quota changed 1m ago | token_count 12s ago | file updated 3s ago
 | Burn Rate | timestamp 付き Claude transcript/statusLine history | timestamp 付き Codex session events | burn rate は複数のローカル観測点から計算でき、online quota call は不要です。 |
 | plan 表示 | 取得できる場合のみ Claude Code credentials metadata | 取得できる場合のみ Codex local rate-limit snapshot | plan は参考表示であり、推測表示は避けます。 |
 | Projected quota | 使いません | 5時間 quota % が変わらない間の Codex cumulative `token_count` 差分を、stale 時間と token 増分で制御して使用 | Codex は token activity が quota % より先に更新される場合があります。その遅れを、公式 quota 行を置き換えずに見えるようにします。週間枠は、現在セッションの token 差分だけで account-wide な週次変化を過大表示しやすいため推定しません。 |
+| Reset credits | 使いません | 任意の ChatGPT account reset-credit endpoint。sanitize して cache | Reset credit は quota window ではありません。別表示し、残り％の計算には使いません。 |
 | 鮮度 | online cache age、statusLine capture age、transcript age | token event age と session file mtime | 表示値が live、cached、stale のどれか判断するためです。 |
 
 ### 抽出ロジック
@@ -361,13 +376,15 @@ access token は次の順で読みます。
 1. `CLAUDE_CODE_OAUTH_TOKEN`
 2. Claude Code credentials file
 
-既存の Claude Code OAuth session を使って Claude usage endpoint を呼びます。これは usage/quota 確認であり、model inference ではないため、会話 token を消費する類の呼び出しではありません。レスポンスは 60 秒だけ次にキャッシュします。
+既存の Claude Code OAuth session を使って Claude usage endpoint を呼びます。これは usage/quota 確認であり、model inference ではないため、会話 token を消費する類の呼び出しではありません。レスポンスは 300 秒だけ次にキャッシュします。
 
 ```text
 AI usage monitor cache directory / claude-online-usage-cache.json
 ```
 
 キャッシュするのは quota と timestamp だけです。OAuth token は保存しません。online request が失敗した場合は、最後の cache または local statusLine snapshot にフォールバックし、source を stale として表示します。online quota が使える場合は、local statusLine の `rate_limits` より優先します。
+
+Claude online usage endpoint は、このローカル monitor のために使っている undocumented helper です。高頻度の公式 API のように扱わないため、HTTP 429 では短い backoff を入れます。
 
 ### Claude Local Token Flow
 
@@ -408,6 +425,8 @@ monitor は毎回、複数の新しい session candidate を読み、active sour
 
 token から percent への換算は、同じ reset window 内で過去に quota % が増えた複数区間の中央値を使い、大きな外れ値を除外します。1回の補正幅は provider 値から最大 +15% までに制限します。これにより、作業中の短い token burst で推定が暴れすぎることを防ぎつつ、active development 中の quota 反映遅れを見えるようにします。
 
+Codex reset credit は launcher で有効な場合に別途読みます。monitor は status、granted time、expiration time など表示に必要な sanitized credit field だけを local cache に保存します。access token と account ID は表示・キャッシュしません。reset-credit request が失敗しても、quota と token 表示は通常通り継続します。
+
 ### 更新頻度
 
 `run.cmd` は watch mode で起動します。
@@ -431,7 +450,7 @@ profiles:
 | `slow` | 30秒 |
 | `--refresh N` | 任意秒数 |
 
-画面は 15 秒ごとに更新しますが、Claude online quota は既定で 60 秒キャッシュします。Claude/Codex の local file は画面更新ごとに読み直します。
+画面は 15 秒ごとに更新しますが、Claude online quota と Codex reset credit は既定で 300 秒キャッシュします。Claude/Codex の local file は画面更新ごとに読み直します。
 
 ### Commands
 
@@ -456,7 +475,7 @@ run.cmd --once --full-scan
 fixture data で実行:
 
 ```cmd
-run.cmd --once --no-claude-online-usage --claude-path tests\fixtures\claude-statusline.json --codex-path tests\fixtures\codex
+run.cmd --once --no-claude-online-usage --no-codex-reset-credits --claude-path tests\fixtures\claude-statusline.json --codex-path tests\fixtures\codex
 ```
 
 JSON output:
@@ -491,6 +510,7 @@ cmd.exe /c "set PYTHONPATH=src&& python tests\test_parser.py"
 - browser cookie は読みません。
 - Claude OAuth token は usage endpoint 呼び出しにだけ使い、保存・表示・キャッシュしません。
 - Claude online quota call は model inference call ではありません。
+- Codex reset-credit lookup は既存の local Codex OAuth session を使い、sanitized credit metadata だけを cache し、quota % は変更しません。
 - Codex online/account usage endpoint は、安定した local または official source が確認できるまで使いません。Codex `Projected` はローカル推定として別表示します。
 - 不明または壊れた local log record は skip します。
 

@@ -1,12 +1,13 @@
 from pathlib import Path
 from datetime import timedelta
 
-from ai_usage_monitor.models import RateLimitWindow
+from ai_usage_monitor.codex_reset_credits import credits_from_cache, sanitize_response
+from ai_usage_monitor.models import RateLimitWindow, ResetCredit
 from ai_usage_monitor.providers import Provider, RateLimitSnapshot, summarize
 from ai_usage_monitor.models import utc_now
 from ai_usage_monitor.parser import extract_event
 from ai_usage_monitor.providers import extract_rate_limit_snapshot
-from ai_usage_monitor.render import status_for_rate_limits
+from ai_usage_monitor.render import render_text, status_for_rate_limits
 
 
 def test_claude_fixture_collects_usage():
@@ -168,6 +169,69 @@ def test_codex_projection_caps_token_count_adjustment():
     assert five_hour.projection_source == "token_count"
 
 
+def test_stale_claude_rate_limit_snapshot_renders_stale_status():
+    old = utc_now() - timedelta(hours=2)
+    snapshot = RateLimitSnapshot(
+        "claude-statusline.json",
+        old,
+        [
+            RateLimitWindow("5h", 1.0, resets_at=old - timedelta(minutes=1)),
+            RateLimitWindow("week", 51.0, resets_at=utc_now() + timedelta(days=1)),
+        ],
+        None,
+        {"rate_limits": "fresh", "context_window": "fresh"},
+    )
+    summary = summarize("Claude Code", [], 1, None, [], [snapshot])
+    output = render_text([summary], details=True, color=False)
+
+    assert "Status      STALE SNAPSHOT" in output
+    assert "rate_limits stale" in (summary.source_status or "")
+
+
+def test_codex_reset_credits_render_as_supplemental_line():
+    now = utc_now()
+    snapshot = RateLimitSnapshot(
+        "session.jsonl",
+        now,
+        [RateLimitWindow("5h", 42.0, resets_at=now + timedelta(hours=1))],
+        "plus",
+    )
+    summary = summarize("Codex", [], 0, None, [], [snapshot])
+    summary.reset_credits = [
+        ResetCredit("available", granted_at=now - timedelta(days=1), expires_at=now + timedelta(days=1)),
+        ResetCredit("redeemed", granted_at=now - timedelta(days=2), expires_at=now + timedelta(days=2)),
+    ]
+    output = render_text([summary], details=True, color=False)
+
+    assert "Reset Credits 1 available" in output
+    assert "  #1  granted " in output
+    assert " | expires " in output
+
+
+def test_codex_reset_credit_cache_sanitizes_private_fields():
+    response = {
+        "available_count": 1,
+        "total_earned_count": 2,
+        "credits": [
+            {
+                "id": "secret-id",
+                "status": "available",
+                "expires_at": "2026-07-27T00:01:17Z",
+                "profile_user_id": "private-user",
+                "profile_image_url": "https://example.invalid/private.png",
+            }
+        ],
+    }
+    sanitized = sanitize_response(response)
+    cache = {"fetched_at": utc_now().isoformat(), "response": sanitized}
+    credits = credits_from_cache(cache)
+
+    assert "id" not in sanitized["credits"][0]
+    assert "profile_user_id" not in sanitized["credits"][0]
+    assert len(credits) == 1
+    assert credits[0].status == "available"
+
+
 def codex_token_count_row(timestamp: str, total_tokens: int, used_percent: float, reset: int):
     return {
         "timestamp": timestamp,
@@ -202,4 +266,7 @@ if __name__ == "__main__":
     test_codex_projects_quota_when_token_count_moves_before_quota_refresh()
     test_codex_projection_stays_on_quota_before_stale_threshold()
     test_codex_projection_caps_token_count_adjustment()
+    test_stale_claude_rate_limit_snapshot_renders_stale_status()
+    test_codex_reset_credits_render_as_supplemental_line()
+    test_codex_reset_credit_cache_sanitizes_private_fields()
     print("ok")

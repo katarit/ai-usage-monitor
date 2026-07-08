@@ -251,7 +251,12 @@ def claude_source_status(
         status = latest_rate_limits.capture_status or {}
         rate_limits = status.get("rate_limits", "unknown")
         context = status.get("context_window", "missing")
-        parts.append(f"rate_limits {rate_limits}")
+        if latest_rate_limits.timestamp is None:
+            parts.append(f"rate_limits {rate_limits} timestamp missing")
+        elif is_snapshot_stale(latest_rate_limits.timestamp):
+            parts.append(f"rate_limits stale {relative_age(latest_rate_limits.timestamp)}")
+        else:
+            parts.append(f"rate_limits {rate_limits} {relative_age(latest_rate_limits.timestamp)}")
         if has_reset_passed(latest_rate_limits):
             parts.append("quota reset passed")
             parts.append("waiting provider refresh")
@@ -508,6 +513,12 @@ def relative_age(value: datetime | None) -> str:
         return f"{minutes}m ago"
     hours = minutes // 60
     return f"{hours}h {minutes % 60}m ago"
+
+
+def is_snapshot_stale(value: datetime | None, max_age_seconds: int = 300) -> bool:
+    if value is None:
+        return True
+    return (utc_now() - value.astimezone(timezone.utc)).total_seconds() > max_age_seconds
 
 
 def cumulative_burn_rate(events: list[UsageEvent]) -> float | None:

@@ -8,3 +8,4 @@ venv/
 .codex/
 .ai-usage-monitor/
 tests/_tmp/
+tasks/

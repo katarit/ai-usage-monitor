@@ -5,7 +5,7 @@ import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +18,7 @@ ENDPOINT = "https://api.anthropic.com/api/oauth/usage"
 BETA_HEADER = "oauth-2025-04-20"
 CACHE_NAME = "claude-online-usage-cache.json"
 HISTORY_NAME = "claude-online-usage-history.jsonl"
+DEFAULT_BACKOFF_SECONDS = 300
 
 
 @dataclass
@@ -35,6 +36,11 @@ def load_claude_online_usage(home: Path, ttl_seconds: int = 60) -> ClaudeOnlineU
         snapshot = snapshot_from_cache(cached, stale=False)
         if snapshot is not None:
             return ClaudeOnlineUsage(combine_snapshots(history, snapshot), [])
+    if cached is not None and backoff_is_active(cached):
+        snapshot = snapshot_from_cache(cached, stale=True)
+        notes = ["Claude online usage fetch is backed off after rate limiting"]
+        snapshots = combine_snapshots(history, snapshot)
+        return ClaudeOnlineUsage(snapshots, notes)
 
     token, plan_type = read_oauth_token(home)
     if token is None:
@@ -45,6 +51,18 @@ def load_claude_online_usage(home: Path, ttl_seconds: int = 60) -> ClaudeOnlineU
 
     try:
         response = fetch_usage(token)
+    except urllib.error.HTTPError as exc:
+        snapshot = snapshot_from_cache(cached, stale=True) if cached is not None else None
+        notes = [f"Claude online usage fetch failed: HTTP {exc.code}"]
+        if exc.code == 429 and cached is not None:
+            updated = dict(cached)
+            updated["last_error"] = "HTTP 429"
+            updated["backoff_until"] = (utc_now() + timedelta(seconds=DEFAULT_BACKOFF_SECONDS)).isoformat()
+            write_cache(cache_path, updated)
+            snapshot = snapshot_from_cache(updated, stale=True)
+            notes = ["Claude online usage fetch rate limited"]
+        snapshots = combine_snapshots(history, snapshot)
+        return ClaudeOnlineUsage(snapshots, notes)
     except (OSError, urllib.error.URLError, TimeoutError) as exc:
         snapshot = snapshot_from_cache(cached, stale=True) if cached is not None else None
         notes = [f"Claude online usage fetch failed: {exc.__class__.__name__}"]
@@ -182,6 +200,13 @@ def cache_is_fresh(cache: dict[str, Any], ttl_seconds: int) -> bool:
         return False
     age = (utc_now() - fetched_at.astimezone(timezone.utc)).total_seconds()
     return age <= max(ttl_seconds, 0)
+
+
+def backoff_is_active(cache: dict[str, Any]) -> bool:
+    backoff_until = parse_timestamp(str(cache.get("backoff_until") or ""))
+    if backoff_until is None:
+        return False
+    return utc_now() < backoff_until.astimezone(timezone.utc)
 
 
 def snapshot_from_cache(cache: dict[str, Any], *, stale: bool) -> RateLimitSnapshot | None:

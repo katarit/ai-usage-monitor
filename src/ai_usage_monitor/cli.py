@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from .claude_online import load_claude_online_usage
+from .codex_reset_credits import load_codex_reset_credits
 from .providers import default_claude_provider, default_codex_provider, summarize
 from .render import render_json, render_text
 
@@ -71,8 +72,25 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--claude-online-ttl",
         type=int,
-        default=60,
-        help="Seconds to cache Claude online usage responses. Default: 60.",
+        default=300,
+        help="Seconds to cache Claude online usage responses. Default: 300.",
+    )
+    parser.add_argument(
+        "--codex-reset-credits",
+        action="store_true",
+        help="Read available Codex reset credits from the ChatGPT account endpoint.",
+    )
+    parser.add_argument(
+        "--no-codex-reset-credits",
+        dest="codex_reset_credits",
+        action="store_false",
+        help="Disable Codex reset credit lookup.",
+    )
+    parser.add_argument(
+        "--codex-reset-credits-ttl",
+        type=int,
+        default=300,
+        help="Seconds to cache Codex reset credit responses. Default: 300.",
     )
     return parser.parse_args(argv)
 
@@ -102,11 +120,31 @@ def collect_summaries(args: argparse.Namespace):
         full_scan=args.full_scan,
         latest_files=5,
     )
+    codex_reset_credits = None
+    if args.codex_reset_credits:
+        codex_reset_credits = load_codex_reset_credits(home, ttl_seconds=args.codex_reset_credits_ttl)
+        codex_notes.extend(codex_reset_credits.notes)
 
-    return [
-        summarize("Claude Code", claude_events, claude_files, args.claude_limit_tokens, claude_notes, claude_rate_limits),
-        summarize("Codex", codex_events, codex_files, args.codex_limit_tokens, codex_notes, codex_rate_limits),
-    ]
+    claude_summary = summarize(
+        "Claude Code",
+        claude_events,
+        claude_files,
+        args.claude_limit_tokens,
+        claude_notes,
+        claude_rate_limits,
+    )
+    codex_summary = summarize(
+        "Codex",
+        codex_events,
+        codex_files,
+        args.codex_limit_tokens,
+        codex_notes,
+        codex_rate_limits,
+    )
+    if codex_reset_credits is not None:
+        codex_summary.reset_credits = codex_reset_credits.credits
+        codex_summary.reset_credit_source = codex_reset_credits.source
+    return [claude_summary, codex_summary]
 
 
 def clear_screen() -> None:

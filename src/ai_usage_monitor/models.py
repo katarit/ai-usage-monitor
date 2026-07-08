@@ -69,6 +69,16 @@ class RateLimitWindow:
 
 
 @dataclass
+class ResetCredit:
+    status: str
+    expires_at: datetime | None = None
+    granted_at: datetime | None = None
+    reset_type: str | None = None
+    title: str | None = None
+    description: str | None = None
+
+
+@dataclass
 class ProviderSummary:
     name: str
     events: int
@@ -86,6 +96,8 @@ class ProviderSummary:
     token_source: str | None = None
     snapshot_timestamp: datetime | None = None
     source_status: str | None = None
+    reset_credits: list[ResetCredit] = field(default_factory=list)
+    reset_credit_source: str | None = None
     notes: list[str] = field(default_factory=list)
 
 
