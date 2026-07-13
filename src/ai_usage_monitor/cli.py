@@ -72,8 +72,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--claude-online-ttl",
         type=int,
-        default=300,
-        help="Seconds to cache Claude online usage responses. Default: 300.",
+        default=60,
+        help="Seconds to cache Claude online usage responses. Default: 60.",
     )
     parser.add_argument(
         "--codex-reset-credits",
