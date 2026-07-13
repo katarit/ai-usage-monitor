@@ -21,5 +21,5 @@ for %%A in (%*) do (
 if "%~1"=="" (
   "%PYTHON_CMD%" -m ai_usage_monitor --watch --profile normal %CLAUDE_ONLINE_ARGS% %CODEX_CREDITS_ARGS%
 ) else (
-  "%PYTHON_CMD%" -m ai_usage_monitor %* %CLAUDE_ONLINE_ARGS% %CODEX_CREDITS_ARGS%
+  "%PYTHON_CMD%" -m ai_usage_monitor %CLAUDE_ONLINE_ARGS% %CODEX_CREDITS_ARGS% %*
 )

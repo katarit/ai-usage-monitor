@@ -8,9 +8,11 @@ Default usage is optimized for one-person local operation. Claude Code quota per
 
 ### Version
 
-Current version: `1.1.0`
+Current version: `1.1.1`
 
-`1.1.0` improves freshness labeling and adds Codex reset credit display. Claude token freshness and quota freshness are separated more clearly, Claude online quota lookups use a longer cache/backoff, and available Codex reset credits are shown as a supplemental line.
+`1.1.1` fixes two freshness regressions: the Claude online quota cache TTL is restored to 60 seconds (it had drifted to 300 seconds in `1.1.0`, delaying the `5 hours`/`1 week` percentages), and `run.cmd` no longer lets its default flags silently override a user-supplied `--claude-online-ttl` or `--codex-reset-credits-ttl`.
+
+`1.1.0` improved freshness labeling and added Codex reset credit display. Claude token freshness and quota freshness are separated more clearly, and available Codex reset credits are shown as a supplemental line.
 
 ### Policy
 
@@ -119,7 +121,7 @@ It reads the access token from this priority order:
 1. `CLAUDE_CODE_OAUTH_TOKEN`
 2. Claude Code credentials file
 
-The monitor calls the Claude usage endpoint with the existing Claude Code OAuth session. This is a usage/quota request, not a model inference request, so it should not consume conversation tokens. The response is cached here for 300 seconds:
+The monitor calls the Claude usage endpoint with the existing Claude Code OAuth session. This is a usage/quota request, not a model inference request, so it should not consume conversation tokens. The response is cached here for 60 seconds by default (`--claude-online-ttl`):
 
 ```text
 AI usage monitor cache directory / claude-online-usage-cache.json
@@ -193,7 +195,7 @@ Profiles:
 | `slow` | 30 seconds |
 | `--refresh N` | Custom seconds |
 
-Claude online quota and Codex reset credits are cached for 300 seconds by default, even though the terminal redraws every 15 seconds. Local Claude/Codex files are reread every redraw.
+Claude online quota is cached for 60 seconds and Codex reset credits for 300 seconds by default, even though the terminal redraws every 15 seconds. Local Claude/Codex files are reread every redraw.
 
 ### Commands
 
@@ -265,9 +267,11 @@ MIT License. See `LICENSE`.
 
 ### バージョン
 
-現在のバージョン: `1.1.0`
+現在のバージョン: `1.1.1`
 
-`1.1.0` では freshness 表示を改善し、Codex reset credit 表示を追加しました。Claude の token freshness と quota freshness をより明確に分け、Claude online quota は長めの cache/backoff を使い、利用可能な Codex reset credit は補助行として表示します。
+`1.1.1` では freshness に関する退行を2件修正しました。Claude online quota の cache TTL を 60 秒に戻し（`1.1.0` で 300 秒に伸びており、`5 hours`/`1 week` の％反映が遅れていました）、`run.cmd` の既定引数がユーザー指定の `--claude-online-ttl` / `--codex-reset-credits-ttl` を黙って上書きしていた問題を修正しました。
+
+`1.1.0` では freshness 表示を改善し、Codex reset credit 表示を追加しました。Claude の token freshness と quota freshness をより明確に分け、利用可能な Codex reset credit は補助行として表示します。
 
 ### 方針
 
@@ -376,7 +380,7 @@ access token は次の順で読みます。
 1. `CLAUDE_CODE_OAUTH_TOKEN`
 2. Claude Code credentials file
 
-既存の Claude Code OAuth session を使って Claude usage endpoint を呼びます。これは usage/quota 確認であり、model inference ではないため、会話 token を消費する類の呼び出しではありません。レスポンスは 300 秒だけ次にキャッシュします。
+既存の Claude Code OAuth session を使って Claude usage endpoint を呼びます。これは usage/quota 確認であり、model inference ではないため、会話 token を消費する類の呼び出しではありません。レスポンスは既定で 60 秒だけキャッシュします（`--claude-online-ttl`）。
 
 ```text
 AI usage monitor cache directory / claude-online-usage-cache.json
@@ -450,7 +454,7 @@ profiles:
 | `slow` | 30秒 |
 | `--refresh N` | 任意秒数 |
 
-画面は 15 秒ごとに更新しますが、Claude online quota と Codex reset credit は既定で 300 秒キャッシュします。Claude/Codex の local file は画面更新ごとに読み直します。
+画面は 15 秒ごとに更新しますが、Claude online quota は既定で 60 秒、Codex reset credit は既定で 300 秒キャッシュします。Claude/Codex の local file は画面更新ごとに読み直します。
 
 ### Commands
 
