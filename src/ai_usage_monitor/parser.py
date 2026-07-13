@@ -8,10 +8,10 @@ from typing import Any, Iterable
 
 from .models import RateLimitWindow, TokenUsage, UsageEvent
 
-# Codex's primary/secondary rate-limit keys are positional, not name-bound: the
-# account can report only one window at a time (observed: the 5h window absent,
-# a single window carrying the 7-day length reported under "primary"). Classify
-# by the window's own length instead of trusting which key it arrived under.
+# Codex's primary/secondary rate-limit keys do not reliably identify the 5-hour
+# and weekly windows (observed: the 5h window absent, a single window carrying
+# the 7-day length reported under "primary"). Classify by the window's own
+# length instead of trusting which key it arrived under.
 CODEX_WEEK_WINDOW_MINUTES_THRESHOLD = 1440  # 1 day; separates 5h (300) from week (10080)
 
 
