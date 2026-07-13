@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
 from .models import RateLimitWindow, TokenUsage, UsageEvent
+
+# Codex's primary/secondary rate-limit keys do not reliably identify the 5-hour
+# and weekly windows (observed: the 5h window absent, a single window carrying
+# the 7-day length reported under "primary"). Classify by the window's own
+# length instead of trusting which key it arrived under.
+CODEX_WEEK_WINDOW_MINUTES_THRESHOLD = 1440  # 1 day; separates 5h (300) from week (10080)
 
 
 INPUT_KEYS = ("input_tokens", "inputTokens", "prompt_tokens", "promptTokens")
@@ -185,21 +192,31 @@ def extract_rate_limits(obj: dict[str, Any]) -> tuple[list[RateLimitWindow], str
     if rate_limits is None:
         return None
     windows: list[RateLimitWindow] = []
-    for key, label in (
-        ("five_hour", "5h"),
-        ("seven_day", "week"),
-        ("primary", "5h"),
-        ("secondary", "week"),
-    ):
+    for key, label in (("five_hour", "5h"), ("seven_day", "week")):
         value = rate_limits.get(key)
         if isinstance(value, dict):
             window = rate_limit_window_from_dict(label, value)
             if window is not None:
                 windows.append(window)
+    for key, default_label in (("primary", "5h"), ("secondary", "week")):
+        value = rate_limits.get(key)
+        if isinstance(value, dict):
+            window = rate_limit_window_from_dict(default_label, value)
+            if window is not None:
+                windows.append(classify_codex_window(window))
     if not windows:
         return None
     plan_type = rate_limits.get("plan_type")
     return windows, plan_type if isinstance(plan_type, str) else None
+
+
+def classify_codex_window(window: RateLimitWindow) -> RateLimitWindow:
+    if window.window_minutes is None:
+        return window
+    inferred = "week" if window.window_minutes > CODEX_WEEK_WINDOW_MINUTES_THRESHOLD else "5h"
+    if inferred == window.name:
+        return window
+    return replace(window, name=inferred)
 
 
 def find_rate_limits_object(obj: dict[str, Any]) -> dict[str, Any] | None:

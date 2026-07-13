@@ -8,9 +8,11 @@ Default usage is optimized for one-person local operation. Claude Code quota per
 
 ### Version
 
-Current version: `1.1.1`
+Current version: `1.1.2`
 
-`1.1.1` fixes two freshness regressions: the Claude online quota cache TTL is restored to 60 seconds (it had drifted to 300 seconds in `1.1.0`, delaying the `5 hours`/`1 week` percentages), and `run.cmd` no longer lets its default flags silently override a user-supplied `--claude-online-ttl` or `--codex-reset-credits-ttl`.
+`1.1.2` fixes a Codex rate-limit window misclassification. Codex's `primary`/`secondary` rate-limit keys do not reliably identify the 5-hour and weekly windows, but the monitor assumed `primary` always meant the 5-hour window and `secondary` always meant the weekly window. When an account currently reports only one window (for example, no active 5-hour window), the monitor now classifies each window by its actual length (`window_minutes`) instead of trusting the key it arrived under, so `5 hours` and `1 week` are labeled correctly no matter which slot the data arrives in.
+
+`1.1.1` fixed two freshness regressions: the Claude online quota cache TTL is restored to 60 seconds (it had drifted to 300 seconds in `1.1.0`, delaying the `5 hours`/`1 week` percentages), and `run.cmd` no longer lets its default flags silently override a user-supplied `--claude-online-ttl` or `--codex-reset-credits-ttl`.
 
 `1.1.0` improved freshness labeling and added Codex reset credit display. Claude token freshness and quota freshness are separated more clearly, and available Codex reset credits are shown as a supplemental line.
 
@@ -88,8 +90,8 @@ Reset Credits 2 available
 
 | Feature | Claude Code source | Codex source | Why this source |
 | --- | --- | --- | --- |
-| 5-hour quota percentage | `https://api.anthropic.com/api/oauth/usage` using the local Claude Code OAuth session | Codex local session files, `token_count.rate_limits.primary` | Quota percentages must come from provider-reported account/session data. Local token totals alone cannot reproduce subscription limits. |
-| Weekly quota percentage | Same Claude usage endpoint, `seven_day` | Codex local session files, `token_count.rate_limits.secondary` | Weekly limits are account-window limits, not raw transcript totals. |
+| 5-hour quota percentage | `https://api.anthropic.com/api/oauth/usage` using the local Claude Code OAuth session | Codex local session files, `token_count.rate_limits` window classified as 5-hour by its length | Quota percentages must come from provider-reported account/session data. Local token totals alone cannot reproduce subscription limits. |
+| Weekly quota percentage | Same Claude usage endpoint, `seven_day` | Codex local session files, `token_count.rate_limits` window classified as weekly by its length | Weekly limits are account-window limits, not raw transcript totals. Codex's `primary`/`secondary` keys do not reliably identify which window is which, so the monitor classifies each window by its actual length (`window_minutes`) rather than trusting the key it arrived under. |
 | Reset time | Claude usage endpoint `resets_at` | Codex local `rate_limits.*.resets_at` | Reset timestamps are emitted with provider quota snapshots. |
 | Token breakdown | Claude Code transcript files, plus statusLine context when present | Codex `token_count.info.total_token_usage` and usage records | These local files are the most direct low-cost source for active token activity. |
 | Burn rate | Local timestamped Claude transcript/statusLine history | Local timestamped Codex session events | Burn rate needs multiple local observations; it does not require an online quota call. |
@@ -267,7 +269,9 @@ MIT License. See `LICENSE`.
 
 ### バージョン
 
-現在のバージョン: `1.1.1`
+現在のバージョン: `1.1.2`
+
+`1.1.2` では Codex のレート制限ウィンドウの誤分類を修正しました。Codex の `primary`/`secondary` キーは、どちらが5時間でどちらが週次かを確実には表していませんが、モニターはこれまで `primary` を常に5時間ウィンドウ、`secondary` を常に週次ウィンドウとみなしていました。アカウントが現在ウィンドウを1つしか返さない場合（例: 5時間枠が存在しない場合）でも、キーをそのまま信用せず実際のウィンドウ長（`window_minutes`）で分類するようにしたため、どちらのキーにデータが来ても `5 hours` / `1 week` が正しく表示されます。
 
 `1.1.1` では freshness に関する退行を2件修正しました。Claude online quota の cache TTL を 60 秒に戻し（`1.1.0` で 300 秒に伸びており、`5 hours`/`1 week` の％反映が遅れていました）、`run.cmd` の既定引数がユーザー指定の `--claude-online-ttl` / `--codex-reset-credits-ttl` を黙って上書きしていた問題を修正しました。
 
@@ -347,8 +351,8 @@ Reset Credits 2 available
 
 | 機能 | Claude Code の取得元 | Codex の取得元 | そのデータを使う理由 |
 | --- | --- | --- | --- |
-| 5時間 quota % | ローカル Claude Code OAuth session で `https://api.anthropic.com/api/oauth/usage` を呼ぶ | Codex local session files の `token_count.rate_limits.primary` | quota % は provider が持つ account/session データが必要です。ローカル token 合計だけでは subscription limit を再現できません。 |
-| 週間 quota % | 同じ Claude usage endpoint の `seven_day` | Codex local session files の `token_count.rate_limits.secondary` | 週間上限は transcript 合計ではなく account window の値だからです。 |
+| 5時間 quota % | ローカル Claude Code OAuth session で `https://api.anthropic.com/api/oauth/usage` を呼ぶ | Codex local session files の `token_count.rate_limits` のうち、長さで5時間と判定したウィンドウ | quota % は provider が持つ account/session データが必要です。ローカル token 合計だけでは subscription limit を再現できません。 |
+| 週間 quota % | 同じ Claude usage endpoint の `seven_day` | Codex local session files の `token_count.rate_limits` のうち、長さで週間と判定したウィンドウ | 週間上限は transcript 合計ではなく account window の値だからです。Codex の `primary`/`secondary` キーはどちらがどちらかを確実には表さないため、キーではなく実際のウィンドウ長（`window_minutes`）で分類しています。 |
 | reset 時刻 | Claude usage endpoint の `resets_at` | Codex local `rate_limits.*.resets_at` | reset は provider quota snapshot と一緒に出る値です。 |
 | token breakdown | Claude Code transcript files と、存在する場合は statusLine context | Codex `token_count.info.total_token_usage` と usage records | active な token activity を低負荷に見るには、ローカルファイルが最も直接的です。 |
 | Burn Rate | timestamp 付き Claude transcript/statusLine history | timestamp 付き Codex session events | burn rate は複数のローカル観測点から計算でき、online quota call は不要です。 |
