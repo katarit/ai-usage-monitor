@@ -2,7 +2,7 @@
 
 Local terminal monitor for Claude Code and Codex usage limits, token activity, reset times, burn rate, and data freshness.
 
-Default usage is optimized for one-person local operation. Claude Code quota percentages are read from the Claude Code OAuth usage endpoint by default when using `run.cmd`; token details are read from local files. The OAuth token is never printed, saved, or cached.
+Default usage is optimized for one-person local operation. Claude Code quota percentages are read from the Claude Code OAuth usage endpoint by default when using `run.cmd` (Windows) or `run.command` (macOS); token details are read from local files. The OAuth token is never printed, saved, or cached.
 
 ## English
 
@@ -114,7 +114,7 @@ Reset Credits 2 available
 
 ### Claude Online Usage
 
-`run.cmd` enables Claude online quota by default:
+`run.cmd` (and `run.command` on macOS) enables Claude online quota by default:
 
 ```cmd
 run.cmd
@@ -157,6 +157,8 @@ Diagnostic command:
 ```cmd
 scripts\diagnose_claude_statusline.cmd
 ```
+
+The statusLine capture and diagnostic scripts are Windows-only (`.cmd`). On macOS, Claude quota comes from the online usage endpoint only.
 
 ### Codex Data Flow
 
@@ -380,7 +382,7 @@ Reset Credits 2 available
 
 ### Claude Online Usage
 
-`run.cmd` は既定で Claude online quota を有効にします。
+`run.cmd`（macOS では `run.command`）は既定で Claude online quota を有効にします。
 
 ```cmd
 run.cmd
@@ -423,6 +425,8 @@ AI usage monitor cache directory / claude-statusline-heartbeat.json
 ```cmd
 scripts\diagnose_claude_statusline.cmd
 ```
+
+statusLine capture と診断スクリプトは Windows 専用（`.cmd`）です。macOS では Claude quota は online usage endpoint からのみ取得します。
 
 ### Codex Data Flow
 
