@@ -182,6 +182,8 @@ Codex reset credits are read separately when enabled by the launcher. The monito
 run.cmd
 ```
 
+On macOS, double-click `run.command` in Finder (or run `./run.command` with the same arguments).
+
 One-shot:
 
 ```cmd
@@ -442,6 +444,8 @@ Codex reset credit は launcher で有効な場合に別途読みます。monito
 ```cmd
 run.cmd
 ```
+
+macOS では Finder で `run.command` をダブルクリックします（ターミナルから `./run.command` に同じ引数を渡しても使えます）。
 
 1回だけ実行:
 
