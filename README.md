@@ -8,9 +8,11 @@ Default usage is optimized for one-person local operation. Claude Code quota per
 
 ### Version
 
-Current version: `1.1.2`
+Current version: `1.1.3`
 
-`1.1.2` fixes a Codex rate-limit window misclassification. Codex's `primary`/`secondary` rate-limit keys do not reliably identify the 5-hour and weekly windows, but the monitor assumed `primary` always meant the 5-hour window and `secondary` always meant the weekly window. When an account currently reports only one window (for example, no active 5-hour window), the monitor now classifies each window by its actual length (`window_minutes`) instead of trusting the key it arrived under, so `5 hours` and `1 week` are labeled correctly no matter which slot the data arrives in.
+`1.1.3` makes the Claude online quota usable on macOS and finishes the `1.1.1` freshness fix. `run.cmd` still passed `--claude-online-ttl 300`, so the `5 hours`/`1 week` percentages could lag up to 5 minutes; the launcher now leaves the 60-second default in place. On macOS, where Claude Code stores its login in the Keychain instead of a credentials file, the monitor now reads the token from the Keychain. A `run.command` launcher is added for macOS.
+
+`1.1.2` fixed a Codex rate-limit window misclassification. Codex's `primary`/`secondary` rate-limit keys do not reliably identify the 5-hour and weekly windows, but the monitor assumed `primary` always meant the 5-hour window and `secondary` always meant the weekly window. When an account currently reports only one window (for example, no active 5-hour window), the monitor now classifies each window by its actual length (`window_minutes`) instead of trusting the key it arrived under, so `5 hours` and `1 week` are labeled correctly no matter which slot the data arrives in.
 
 `1.1.1` fixed two freshness regressions: the Claude online quota cache TTL is restored to 60 seconds (it had drifted to 300 seconds in `1.1.0`, delaying the `5 hours`/`1 week` percentages), and `run.cmd` no longer lets its default flags silently override a user-supplied `--claude-online-ttl` or `--codex-reset-credits-ttl`.
 
@@ -122,6 +124,7 @@ It reads the access token from this priority order:
 
 1. `CLAUDE_CODE_OAUTH_TOKEN`
 2. Claude Code credentials file
+3. macOS only: the Claude Code Keychain item (`Claude Code-credentials`), read with the `security` command. macOS may ask once to allow access.
 
 The monitor calls the Claude usage endpoint with the existing Claude Code OAuth session. This is a usage/quota request, not a model inference request, so it should not consume conversation tokens. The response is cached here for 60 seconds by default (`--claude-online-ttl`):
 
@@ -271,7 +274,9 @@ MIT License. See `LICENSE`.
 
 ### バージョン
 
-現在のバージョン: `1.1.2`
+現在のバージョン: `1.1.3`
+
+`1.1.3` では macOS で Claude online quota を使えるようにし、`1.1.1` の freshness 修正を完了しました。`run.cmd` が `--claude-online-ttl 300` を渡し続けていたため `5 hours`/`1 week` の％反映が最大5分遅れていましたが、launcher から指定を外し既定の 60 秒が効くようにしました。macOS の Claude Code は login を credentials file ではなく Keychain に保存するため、Keychain から token を読むようにしました。macOS 用の launcher `run.command` を追加しました。
 
 `1.1.2` では Codex のレート制限ウィンドウの誤分類を修正しました。Codex の `primary`/`secondary` キーは、どちらが5時間でどちらが週次かを確実には表していませんが、モニターはこれまで `primary` を常に5時間ウィンドウ、`secondary` を常に週次ウィンドウとみなしていました。アカウントが現在ウィンドウを1つしか返さない場合（例: 5時間枠が存在しない場合）でも、キーをそのまま信用せず実際のウィンドウ長（`window_minutes`）で分類するようにしたため、どちらのキーにデータが来ても `5 hours` / `1 week` が正しく表示されます。
 
@@ -385,6 +390,7 @@ access token は次の順で読みます。
 
 1. `CLAUDE_CODE_OAUTH_TOKEN`
 2. Claude Code credentials file
+3. macOS のみ: Claude Code の Keychain 項目（`Claude Code-credentials`）を `security` コマンドで読みます。初回に macOS がアクセス許可を求めることがあります。
 
 既存の Claude Code OAuth session を使って Claude usage endpoint を呼びます。これは usage/quota 確認であり、model inference ではないため、会話 token を消費する類の呼び出しではありません。レスポンスは既定で 60 秒だけキャッシュします（`--claude-online-ttl`）。
 

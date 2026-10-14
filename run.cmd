@@ -9,7 +9,7 @@ if %ERRORLEVEL%==0 set "PYTHON_CMD=python"
 if not defined PYTHON_CMD if exist "%LOCALAPPDATA%\Python\pythoncore-3.14-64\python.exe" set "PYTHON_CMD=%LOCALAPPDATA%\Python\pythoncore-3.14-64\python.exe"
 if not defined PYTHON_CMD set "PYTHON_CMD=py"
 
-set "CLAUDE_ONLINE_ARGS=--claude-online-usage --claude-online-ttl 300"
+set "CLAUDE_ONLINE_ARGS=--claude-online-usage"
 for %%A in (%*) do (
   if "%%~A"=="--no-claude-online-usage" set "CLAUDE_ONLINE_ARGS="
 )

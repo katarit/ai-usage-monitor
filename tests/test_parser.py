@@ -258,6 +258,45 @@ def codex_token_count_row(timestamp: str, total_tokens: int, used_percent: float
     }
 
 
+def test_claude_oauth_token_falls_back_to_macos_keychain():
+    import json
+    import subprocess
+    import tempfile
+    from unittest import mock
+
+    from ai_usage_monitor import claude_online
+
+    payload = json.dumps({"claudeAiOauth": {"accessToken": "dummy-token", "subscriptionType": "max"}})
+    completed = subprocess.CompletedProcess(args=[], returncode=0, stdout=payload, stderr="")
+    with tempfile.TemporaryDirectory() as home, mock.patch.dict("os.environ", {}, clear=True):
+        with mock.patch.object(claude_online.sys, "platform", "darwin"), mock.patch.object(
+            claude_online.subprocess, "run", return_value=completed
+        ) as run:
+            assert claude_online.read_oauth_token(Path(home)) == ("dummy-token", "max")
+            assert run.call_args.args[0][3] == claude_online.KEYCHAIN_SERVICE
+
+        with mock.patch.object(claude_online.sys, "platform", "win32"), mock.patch.object(
+            claude_online.subprocess, "run"
+        ) as run:
+            assert claude_online.read_oauth_token(Path(home)) == (None, None)
+            run.assert_not_called()
+
+
+def test_claude_oauth_token_keychain_miss_returns_none():
+    import subprocess
+    import tempfile
+    from unittest import mock
+
+    from ai_usage_monitor import claude_online
+
+    missing = subprocess.CompletedProcess(args=[], returncode=44, stdout="", stderr="not found")
+    with tempfile.TemporaryDirectory() as home, mock.patch.dict("os.environ", {}, clear=True):
+        with mock.patch.object(claude_online.sys, "platform", "darwin"), mock.patch.object(
+            claude_online.subprocess, "run", return_value=missing
+        ):
+            assert claude_online.read_oauth_token(Path(home)) == (None, None)
+
+
 if __name__ == "__main__":
     test_claude_fixture_collects_usage()
     test_codex_fixture_collects_usage()
@@ -269,4 +308,6 @@ if __name__ == "__main__":
     test_stale_claude_rate_limit_snapshot_renders_stale_status()
     test_codex_reset_credits_render_as_supplemental_line()
     test_codex_reset_credit_cache_sanitizes_private_fields()
+    test_claude_oauth_token_falls_back_to_macos_keychain()
+    test_claude_oauth_token_keychain_miss_returns_none()
     print("ok")

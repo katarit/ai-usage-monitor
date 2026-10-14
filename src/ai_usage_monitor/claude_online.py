@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -19,6 +21,7 @@ BETA_HEADER = "oauth-2025-04-20"
 CACHE_NAME = "claude-online-usage-cache.json"
 HISTORY_NAME = "claude-online-usage-history.jsonl"
 DEFAULT_BACKOFF_SECONDS = 300
+KEYCHAIN_SERVICE = "Claude Code-credentials"
 
 
 @dataclass
@@ -87,11 +90,10 @@ def read_oauth_token(home: Path) -> tuple[str | None, str | None]:
     if env_token:
         return env_token, None
 
-    credentials_path = home / ".claude" / ".credentials.json"
-    try:
-        with credentials_path.open("r", encoding="utf-8") as handle:
-            credentials = json.load(handle)
-    except (OSError, json.JSONDecodeError):
+    credentials = read_credentials_file(home)
+    if credentials is None and sys.platform == "darwin":
+        credentials = read_credentials_keychain()
+    if credentials is None:
         return None, None
 
     oauth = credentials.get("claudeAiOauth")
@@ -103,6 +105,37 @@ def read_oauth_token(home: Path) -> tuple[str | None, str | None]:
         token if isinstance(token, str) and token else None,
         plan_type if isinstance(plan_type, str) and plan_type else None,
     )
+
+
+def read_credentials_file(home: Path) -> dict[str, Any] | None:
+    credentials_path = home / ".claude" / ".credentials.json"
+    try:
+        with credentials_path.open("r", encoding="utf-8") as handle:
+            credentials = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return None
+    return credentials if isinstance(credentials, dict) else None
+
+
+def read_credentials_keychain() -> dict[str, Any] | None:
+    # Claude Code on macOS keeps the login in the Keychain instead of .credentials.json.
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        credentials = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    return credentials if isinstance(credentials, dict) else None
 
 
 def fetch_usage(token: str) -> dict[str, Any]:

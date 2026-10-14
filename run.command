@@ -5,7 +5,7 @@ export PYTHONPATH="$PWD/src"
 PYTHON_CMD=python3
 command -v python3 >/dev/null 2>&1 || PYTHON_CMD=python
 
-CLAUDE_ONLINE_ARGS=(--claude-online-usage --claude-online-ttl 300)
+CLAUDE_ONLINE_ARGS=(--claude-online-usage)
 CODEX_CREDITS_ARGS=(--codex-reset-credits --codex-reset-credits-ttl 300)
 for arg in "$@"; do
   [ "$arg" = "--no-claude-online-usage" ] && CLAUDE_ONLINE_ARGS=()
