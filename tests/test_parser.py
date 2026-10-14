@@ -258,7 +258,16 @@ def codex_token_count_row(timestamp: str, total_tokens: int, used_percent: float
     }
 
 
-def test_claude_oauth_token_falls_back_to_macos_keychain():
+def write_dummy_credentials_file(home: Path, token: str) -> None:
+    import json
+
+    claude_dir = home / ".claude"
+    claude_dir.mkdir()
+    payload = {"claudeAiOauth": {"accessToken": token, "subscriptionType": "pro"}}
+    (claude_dir / ".credentials.json").write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_claude_oauth_token_prefers_macos_keychain_over_credentials_file():
     import json
     import subprocess
     import tempfile
@@ -275,14 +284,21 @@ def test_claude_oauth_token_falls_back_to_macos_keychain():
             assert claude_online.read_oauth_token(Path(home)) == ("dummy-token", "max")
             assert run.call_args.args[0][3] == claude_online.KEYCHAIN_SERVICE
 
+        # A leftover credentials file must not shadow the Keychain on macOS.
+        write_dummy_credentials_file(Path(home), "stale-token")
+        with mock.patch.object(claude_online.sys, "platform", "darwin"), mock.patch.object(
+            claude_online.subprocess, "run", return_value=completed
+        ):
+            assert claude_online.read_oauth_token(Path(home)) == ("dummy-token", "max")
+
         with mock.patch.object(claude_online.sys, "platform", "win32"), mock.patch.object(
             claude_online.subprocess, "run"
         ) as run:
-            assert claude_online.read_oauth_token(Path(home)) == (None, None)
+            assert claude_online.read_oauth_token(Path(home)) == ("stale-token", "pro")
             run.assert_not_called()
 
 
-def test_claude_oauth_token_keychain_miss_returns_none():
+def test_claude_oauth_token_keychain_miss_falls_back_to_credentials_file():
     import subprocess
     import tempfile
     from unittest import mock
@@ -296,6 +312,9 @@ def test_claude_oauth_token_keychain_miss_returns_none():
         ):
             assert claude_online.read_oauth_token(Path(home)) == (None, None)
 
+            write_dummy_credentials_file(Path(home), "file-token")
+            assert claude_online.read_oauth_token(Path(home)) == ("file-token", "pro")
+
 
 if __name__ == "__main__":
     test_claude_fixture_collects_usage()
@@ -308,6 +327,6 @@ if __name__ == "__main__":
     test_stale_claude_rate_limit_snapshot_renders_stale_status()
     test_codex_reset_credits_render_as_supplemental_line()
     test_codex_reset_credit_cache_sanitizes_private_fields()
-    test_claude_oauth_token_falls_back_to_macos_keychain()
-    test_claude_oauth_token_keychain_miss_returns_none()
+    test_claude_oauth_token_prefers_macos_keychain_over_credentials_file()
+    test_claude_oauth_token_keychain_miss_falls_back_to_credentials_file()
     print("ok")

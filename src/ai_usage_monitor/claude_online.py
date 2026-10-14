@@ -90,9 +90,11 @@ def read_oauth_token(home: Path) -> tuple[str | None, str | None]:
     if env_token:
         return env_token, None
 
-    credentials = read_credentials_file(home)
-    if credentials is None and sys.platform == "darwin":
-        credentials = read_credentials_keychain()
+    # On macOS the Keychain is what Claude Code keeps current; a
+    # .credentials.json left on disk can hold an expired token.
+    credentials = read_credentials_keychain() if sys.platform == "darwin" else None
+    if credentials is None:
+        credentials = read_credentials_file(home)
     if credentials is None:
         return None, None
 

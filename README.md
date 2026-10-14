@@ -123,8 +123,8 @@ run.cmd
 It reads the access token from this priority order:
 
 1. `CLAUDE_CODE_OAUTH_TOKEN`
-2. Claude Code credentials file
-3. macOS only: the Claude Code Keychain item (`Claude Code-credentials`), read with the `security` command. macOS may ask once to allow access.
+2. macOS only: the Claude Code Keychain item (`Claude Code-credentials`), read with the `security` command. macOS may ask once to allow access. It is read before the credentials file because a file left on disk can hold an expired token.
+3. Claude Code credentials file
 
 The monitor calls the Claude usage endpoint with the existing Claude Code OAuth session. This is a usage/quota request, not a model inference request, so it should not consume conversation tokens. The response is cached here for 60 seconds by default (`--claude-online-ttl`):
 
@@ -391,8 +391,8 @@ run.cmd
 access token は次の順で読みます。
 
 1. `CLAUDE_CODE_OAUTH_TOKEN`
-2. Claude Code credentials file
-3. macOS のみ: Claude Code の Keychain 項目（`Claude Code-credentials`）を `security` コマンドで読みます。初回に macOS がアクセス許可を求めることがあります。
+2. macOS のみ: Claude Code の Keychain 項目（`Claude Code-credentials`）を `security` コマンドで読みます。初回に macOS がアクセス許可を求めることがあります。ディスクに残った credentials file が期限切れの token を持つことがあるため、Keychain を先に読みます。
+3. Claude Code credentials file
 
 既存の Claude Code OAuth session を使って Claude usage endpoint を呼びます。これは usage/quota 確認であり、model inference ではないため、会話 token を消費する類の呼び出しではありません。レスポンスは既定で 60 秒だけキャッシュします（`--claude-online-ttl`）。
 
