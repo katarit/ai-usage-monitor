@@ -466,11 +466,19 @@ def quota_signature(snapshot: RateLimitSnapshot) -> tuple:
             (
                 window.name,
                 round(window.used_percent, 3),
-                window.resets_at,
+                reset_key(window.resets_at),
             )
             for window in snapshot.windows
         )
     )
+
+
+def reset_key(value: datetime | None) -> int | None:
+    # The Claude online endpoint returns resets_at with sub-second jitter on
+    # every fetch (e.g. 17:09:59.5 then 17:10:00.4), so compare to the minute.
+    if value is None:
+        return None
+    return round(value.timestamp() / 60)
 
 
 def has_reset_passed(snapshot: RateLimitSnapshot) -> bool:
@@ -695,4 +703,4 @@ def predict_window_end(
 def same_reset_window(left: RateLimitWindow, right: RateLimitWindow) -> bool:
     if left.resets_at is None or right.resets_at is None:
         return True
-    return left.resets_at == right.resets_at
+    return reset_key(left.resets_at) == reset_key(right.resets_at)

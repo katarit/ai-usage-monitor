@@ -8,7 +8,11 @@ Default usage is optimized for one-person local operation. Claude Code quota per
 
 ### Version
 
-Current version: `1.1.3`
+Current version: `1.1.4`
+
+`1.1.4` fixes the Claude quota-end prediction and the `quota changed` age. The Claude online usage endpoint returns `resets_at` with sub-second jitter on every fetch, and the monitor compared reset times exactly, so earlier snapshots never matched the current window: the predicted end was never shown and `quota changed` reported the latest fetch instead of when the percentage actually moved. Reset times are now compared to the minute.
+
+`1.1.4` also stops the Claude quota from freezing for minutes at a time. In our measurements the usage endpoint sustained roughly 28 requests per hour per OAuth token; the limit is not documented and may change. The 60-second cache TTL used since `1.1.1` used up that allowance in about 30 minutes, after which HTTP 429 backoffs left the percentages several minutes old over and over, even with a single machine. The default TTL is now 150 seconds, a 429 waits for the `Retry-After` the server sends, and each 429 is recorded in `claude-online-errors.jsonl`. When the Claude Code login token has expired, the monitor now skips the request and shows that it is waiting for Claude Code to refresh the token, and it fetches immediately once the token is refreshed. In our observation an expired token received HTTP 429 rather than 401, so retrying only kept the display stale; the token was refreshed when Claude Code was used and lasted about 8 hours. The usage history is now kept for 30 days and read from the end of the file, instead of growing without limit and being read in full on every refresh.
 
 `1.1.3` makes the Claude online quota usable on macOS and finishes the `1.1.1` freshness fix. `run.cmd` still passed `--claude-online-ttl 300`, so the `5 hours`/`1 week` percentages could lag up to 5 minutes; the launcher now leaves the 60-second default in place. On macOS, where Claude Code stores its login in the Keychain instead of a credentials file, the monitor now reads the token from the Keychain. A `run.command` launcher is added for macOS.
 
@@ -126,7 +130,7 @@ It reads the access token from this priority order:
 2. macOS only: the Claude Code Keychain item (`Claude Code-credentials`), read with the `security` command. macOS may ask once to allow access. It is read before the credentials file because a file left on disk can hold an expired token.
 3. Claude Code credentials file
 
-The monitor calls the Claude usage endpoint with the existing Claude Code OAuth session. This is a usage/quota request, not a model inference request, so it should not consume conversation tokens. The response is cached here for 60 seconds by default (`--claude-online-ttl`):
+The monitor calls the Claude usage endpoint with the existing Claude Code OAuth session. This is a usage/quota request, not a model inference request, so it should not consume conversation tokens. The response is cached here for 150 seconds by default (`--claude-online-ttl`). In our measurements the endpoint sustained about 28 requests per hour per token, so values below about 130 seconds are likely to hit HTTP 429:
 
 ```text
 AI usage monitor cache directory / claude-online-usage-cache.json
@@ -134,7 +138,7 @@ AI usage monitor cache directory / claude-online-usage-cache.json
 
 The cache stores only sanitized quota fields and timestamps. It does not store the OAuth token. If the online request fails, the monitor falls back to the last cache or local statusLine snapshot and marks the source as stale. When online quota is available, it takes priority over local statusLine `rate_limits`.
 
-The Claude online usage endpoint is an undocumented helper used for this local monitor. To avoid treating it like a high-frequency official API, HTTP 429 responses trigger a short backoff.
+The Claude online usage endpoint is an undocumented helper used for this local monitor. To avoid treating it like a high-frequency official API, HTTP 429 responses trigger a backoff that follows `Retry-After` when the server sends it (5 minutes otherwise), and each 429 is appended to `claude-online-errors.jsonl` in the same directory. If the Claude Code token has expired, no request is sent until Claude Code refreshes it.
 
 ### Claude Local Token Flow
 
@@ -204,7 +208,7 @@ Profiles:
 | `slow` | 30 seconds |
 | `--refresh N` | Custom seconds |
 
-Claude online quota is cached for 60 seconds and Codex reset credits for 300 seconds by default, even though the terminal redraws every 15 seconds. Local Claude/Codex files are reread every redraw.
+Claude online quota is cached for 150 seconds and Codex reset credits for 300 seconds by default, even though the terminal redraws every 15 seconds. Local Claude/Codex files are reread every redraw.
 
 ### Commands
 
@@ -276,7 +280,11 @@ MIT License. See `LICENSE`.
 
 ### バージョン
 
-現在のバージョン: `1.1.3`
+現在のバージョン: `1.1.4`
+
+`1.1.4` では Claude の枯渇予測と `quota changed` の経過時間を修正しました。Claude online usage endpoint は取得のたびに `resets_at` を1秒未満ずらして返しますが、モニターはリセット時刻を完全一致で比べていたため、過去のスナップショットが同じウィンドウと判定されず、予測が一度も表示されず、`quota changed` も％が実際に動いた時刻ではなく直近の取得時刻を示していました。リセット時刻を分単位で比べるようにしました。
+
+`1.1.4` ではあわせて、Claude の％が数分単位で止まる問題を修正しました。実測では、usage endpoint は OAuth token ごとに1時間あたり約28回までしか続けて応答しませんでした（公開仕様ではなく、変わる可能性があります）。`1.1.1` からの cache TTL 60 秒ではこの上限を約30分で使い切り、以後は HTTP 429 の backoff で％が数分古いままになることを繰り返していました（1台だけで使っていても起きます）。既定の TTL を 150 秒にし、429 ではサーバーが返す `Retry-After` に従って待ち、429 を `claude-online-errors.jsonl` に記録するようにしました。また Claude Code の login token の期限が切れているときは取得せず「Claude Code による token の更新待ち」であることを表示し、token が更新されたらすぐ取得し直します。観測では、期限切れの token には 401 ではなく 429 が返り、再試行しても表示が古いままになっていました。token は Claude Code を使ったときに更新され、有効期間は約8時間でした。使用率の履歴は 30 日分だけ残し、ファイルの末尾から読むようにしました（以前は上限なく増え、更新のたびに全体を読んでいました）。
 
 `1.1.3` では macOS で Claude online quota を使えるようにし、`1.1.1` の freshness 修正を完了しました。`run.cmd` が `--claude-online-ttl 300` を渡し続けていたため `5 hours`/`1 week` の％反映が最大5分遅れていましたが、launcher から指定を外し既定の 60 秒が効くようにしました。macOS の Claude Code は login を credentials file ではなく Keychain に保存するため、Keychain から token を読むようにしました。macOS 用の launcher `run.command` を追加しました。
 
@@ -394,7 +402,7 @@ access token は次の順で読みます。
 2. macOS のみ: Claude Code の Keychain 項目（`Claude Code-credentials`）を `security` コマンドで読みます。初回に macOS がアクセス許可を求めることがあります。ディスクに残った credentials file が期限切れの token を持つことがあるため、Keychain を先に読みます。
 3. Claude Code credentials file
 
-既存の Claude Code OAuth session を使って Claude usage endpoint を呼びます。これは usage/quota 確認であり、model inference ではないため、会話 token を消費する類の呼び出しではありません。レスポンスは既定で 60 秒だけキャッシュします（`--claude-online-ttl`）。
+既存の Claude Code OAuth session を使って Claude usage endpoint を呼びます。これは usage/quota 確認であり、model inference ではないため、会話 token を消費する類の呼び出しではありません。レスポンスは既定で 150 秒だけキャッシュします（`--claude-online-ttl`）。実測では token ごとに1時間あたり約28回までしか続けて応答しなかったため、約130秒より短くすると HTTP 429 になりやすくなります。
 
 ```text
 AI usage monitor cache directory / claude-online-usage-cache.json
@@ -402,7 +410,7 @@ AI usage monitor cache directory / claude-online-usage-cache.json
 
 キャッシュするのは quota と timestamp だけです。OAuth token は保存しません。online request が失敗した場合は、最後の cache または local statusLine snapshot にフォールバックし、source を stale として表示します。online quota が使える場合は、local statusLine の `rate_limits` より優先します。
 
-Claude online usage endpoint は、このローカル monitor のために使っている undocumented helper です。高頻度の公式 API のように扱わないため、HTTP 429 では短い backoff を入れます。
+Claude online usage endpoint は、このローカル monitor のために使っている undocumented helper です。高頻度の公式 API のように扱わないため、HTTP 429 ではサーバーが `Retry-After` を返せばそれに従い（無ければ5分）backoff し、429 を同じディレクトリの `claude-online-errors.jsonl` に追記します。Claude Code の token が期限切れのあいだは、Claude Code が更新するまで取得しません。
 
 ### Claude Local Token Flow
 
@@ -472,7 +480,7 @@ profiles:
 | `slow` | 30秒 |
 | `--refresh N` | 任意秒数 |
 
-画面は 15 秒ごとに更新しますが、Claude online quota は既定で 60 秒、Codex reset credit は既定で 300 秒キャッシュします。Claude/Codex の local file は画面更新ごとに読み直します。
+画面は 15 秒ごとに更新しますが、Claude online quota は既定で 150 秒、Codex reset credit は既定で 300 秒キャッシュします。Claude/Codex の local file は画面更新ごとに読み直します。
 
 ### Commands
 

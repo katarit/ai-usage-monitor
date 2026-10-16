@@ -1,5 +1,5 @@
 from pathlib import Path
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from ai_usage_monitor.codex_reset_credits import credits_from_cache, sanitize_response
 from ai_usage_monitor.models import RateLimitWindow, ResetCredit
@@ -87,6 +87,30 @@ def test_claude_online_quota_takes_priority_over_newer_statusline_snapshot():
     assert summary.rate_limits[0].used_percent == 65.0
     assert summary.rate_limits[0].assumption is None
     assert summary.plan_type == "pro"
+
+
+def test_claude_online_reset_jitter_keeps_prediction_and_quota_change_age():
+    now = utc_now()
+    reset = (now + timedelta(hours=3)).replace(second=0, microsecond=0)
+
+    def online(minutes_ago, used, jitter_ms):
+        return RateLimitSnapshot(
+            "Claude online usage endpoint",
+            now - timedelta(minutes=minutes_ago),
+            [
+                RateLimitWindow("5h", used, resets_at=reset + timedelta(milliseconds=jitter_ms)),
+                RateLimitWindow("week", 60.0, resets_at=reset + timedelta(days=2, milliseconds=jitter_ms)),
+            ],
+            "pro",
+            {"rate_limits": "online", "context_window": "local transcript"},
+        )
+
+    snapshots = [online(20, 30.0, -450), online(10, 40.0, 420), online(5, 40.0, -170), online(0, 40.0, 310)]
+
+    summary = summarize("Claude Code", [], 0, None, [], snapshots)
+
+    assert summary.rate_limits[0].predicted_end is not None
+    assert "quota changed 10m ago" in summary.source_status
 
 
 def test_codex_projects_quota_when_token_count_moves_before_quota_refresh():
@@ -258,13 +282,44 @@ def codex_token_count_row(timestamp: str, total_tokens: int, used_percent: float
     }
 
 
-def write_dummy_credentials_file(home: Path, token: str) -> None:
+def write_dummy_credentials_file(home: Path, token: str, expires_in: timedelta | None = None) -> None:
     import json
 
     claude_dir = home / ".claude"
-    claude_dir.mkdir()
-    payload = {"claudeAiOauth": {"accessToken": token, "subscriptionType": "pro"}}
-    (claude_dir / ".credentials.json").write_text(json.dumps(payload), encoding="utf-8")
+    claude_dir.mkdir(exist_ok=True)
+    oauth = {"accessToken": token, "subscriptionType": "pro"}
+    if expires_in is not None:
+        oauth["expiresAt"] = int((utc_now() + expires_in).timestamp() * 1000)
+    (claude_dir / ".credentials.json").write_text(json.dumps({"claudeAiOauth": oauth}), encoding="utf-8")
+
+
+def online_usage_response(utilization: float = 40.0) -> dict:
+    resets_at = (utc_now() + timedelta(hours=2)).isoformat()
+    return {
+        "five_hour": {"utilization": utilization, "resets_at": resets_at},
+        "seven_day": {"utilization": 10.0, "resets_at": resets_at},
+    }
+
+
+def write_online_cache(home: Path, fetched_ago: timedelta, **extra) -> Path:
+    import json
+
+    cache_path = home / ".ai-usage-monitor" / "claude-online-usage-cache.json"
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache = {"fetched_at": (utc_now() - fetched_ago).isoformat(), "plan_type": "pro", "response": online_usage_response(30.0)}
+    cache.update(extra)
+    cache_path.write_text(json.dumps(cache), encoding="utf-8")
+    return cache_path
+
+
+def http_429(retry_after: str | None):
+    import email.message
+    import urllib.error
+
+    headers = email.message.Message()
+    if retry_after is not None:
+        headers["Retry-After"] = retry_after
+    return urllib.error.HTTPError("https://example.invalid", 429, "Too Many Requests", headers, None)
 
 
 def test_claude_oauth_token_prefers_macos_keychain_over_credentials_file():
@@ -316,6 +371,127 @@ def test_claude_oauth_token_keychain_miss_falls_back_to_credentials_file():
             assert claude_online.read_oauth_token(Path(home)) == ("file-token", "pro")
 
 
+def test_claude_online_expired_token_is_not_fetched_and_says_why():
+    import tempfile
+    from unittest import mock
+
+    from ai_usage_monitor import claude_online
+
+    with tempfile.TemporaryDirectory() as tmp, mock.patch.dict("os.environ", {}, clear=True), mock.patch.object(
+        claude_online.sys, "platform", "win32"
+    ):
+        home = Path(tmp)
+        write_online_cache(home, timedelta(hours=3))
+        write_dummy_credentials_file(home, "old-token", expires_in=timedelta(minutes=-5))
+        with mock.patch.object(claude_online, "fetch_usage") as fetch:
+            usage = claude_online.load_claude_online_usage(home)
+        fetch.assert_not_called()
+        assert usage.notes and usage.notes[0].startswith(claude_online.TOKEN_EXPIRED_NOTE)
+        assert usage.snapshots[-1].capture_status["rate_limits"] == "online stale"
+
+        # Once Claude Code refreshes the token, the next refresh fetches again.
+        write_dummy_credentials_file(home, "new-token", expires_in=timedelta(hours=8))
+        with mock.patch.object(claude_online, "fetch_usage", return_value=online_usage_response()) as fetch:
+            usage = claude_online.load_claude_online_usage(home)
+        fetch.assert_called_once_with("new-token")
+        assert usage.notes == []
+
+
+def test_claude_online_429_follows_retry_after_and_is_logged():
+    import json
+    import tempfile
+    from unittest import mock
+
+    from ai_usage_monitor import claude_online
+
+    with tempfile.TemporaryDirectory() as tmp, mock.patch.dict("os.environ", {}, clear=True), mock.patch.object(
+        claude_online.sys, "platform", "win32"
+    ):
+        home = Path(tmp)
+        cache_path = write_online_cache(home, timedelta(minutes=10))
+        write_dummy_credentials_file(home, "token", expires_in=timedelta(hours=8))
+        with mock.patch.object(claude_online, "fetch_usage", side_effect=http_429("120")):
+            usage = claude_online.load_claude_online_usage(home)
+        assert usage.notes == ["Claude online usage fetch rate limited"]
+
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+        wait = (datetime.fromisoformat(cache["backoff_until"]) - utc_now()).total_seconds()
+        assert 110 <= wait <= 120
+        errors = (home / ".ai-usage-monitor" / claude_online.ERRORS_NAME).read_text(encoding="utf-8").splitlines()
+        assert json.loads(errors[-1])["retry_after"] == "120"
+
+        # Still backed off with the same token: no request is sent.
+        with mock.patch.object(claude_online, "fetch_usage") as fetch:
+            usage = claude_online.load_claude_online_usage(home)
+        fetch.assert_not_called()
+        assert usage.notes == ["Claude online usage fetch is backed off after rate limiting"]
+
+        # A token refreshed by Claude Code has its own allowance: skip the backoff.
+        write_dummy_credentials_file(home, "fresh-token", expires_in=timedelta(hours=8, minutes=30))
+        with mock.patch.object(claude_online, "fetch_usage", return_value=online_usage_response()) as fetch:
+            usage = claude_online.load_claude_online_usage(home)
+        fetch.assert_called_once_with("fresh-token")
+
+
+def test_claude_online_backoff_without_retry_after_uses_default():
+    from ai_usage_monitor import claude_online
+
+    assert claude_online.backoff_seconds(None) == claude_online.DEFAULT_BACKOFF_SECONDS
+    assert claude_online.backoff_seconds("abc") == claude_online.DEFAULT_BACKOFF_SECONDS
+    assert claude_online.backoff_seconds("5") == claude_online.MIN_BACKOFF_SECONDS
+    assert claude_online.backoff_seconds("99999") == claude_online.MAX_BACKOFF_SECONDS
+
+
+def test_claude_online_default_ttl_reaches_the_loader():
+    from unittest import mock
+
+    from ai_usage_monitor import cli
+
+    args = cli.parse_args(["--claude-online-usage"])
+    assert args.claude_online_ttl == 150
+    with mock.patch.object(cli, "load_claude_online_usage") as load, mock.patch.object(
+        cli, "default_claude_provider"
+    ) as claude, mock.patch.object(cli, "default_codex_provider") as codex:
+        load.return_value.snapshots = []
+        load.return_value.notes = []
+        claude.return_value.collect.return_value = ([], [], [], [])
+        codex.return_value.collect.return_value = ([], [], [], [])
+        cli.collect_summaries(args)
+    assert load.call_args.kwargs["ttl_seconds"] == 150
+
+
+def test_claude_online_history_is_trimmed_to_30_days_and_read_from_tail():
+    import json
+    import tempfile
+
+    from ai_usage_monitor import claude_online
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "history.jsonl"
+        now = utc_now()
+        lines = []
+        for days_ago in (40, 32, 29, 1):
+            entry = {
+                "fetched_at": (now - timedelta(days=days_ago)).isoformat(),
+                "response": online_usage_response(float(days_ago)),
+            }
+            lines.append(json.dumps(entry))
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        claude_online.append_log(path, {"fetched_at": now.isoformat(), "response": online_usage_response(0.0)}, "fetched_at")
+        kept = [json.loads(line)["response"]["five_hour"]["utilization"] for line in path.read_text(encoding="utf-8").splitlines()]
+        assert kept == [29.0, 1.0, 0.0]
+
+        # Within the extra day nothing is rewritten.
+        before = path.read_text(encoding="utf-8")
+        claude_online.trim_log(path, "fetched_at")
+        assert path.read_text(encoding="utf-8") == before
+
+        # Tail reads cross block boundaries without returning a cut line.
+        assert len(claude_online.read_tail_lines(path, 2, block_size=16)) == 2
+        assert [s.windows[0].used_percent for s in claude_online.read_history(path, keep=2)] == [1.0, 0.0]
+
+
 if __name__ == "__main__":
     test_claude_fixture_collects_usage()
     test_codex_fixture_collects_usage()
@@ -329,4 +505,9 @@ if __name__ == "__main__":
     test_codex_reset_credit_cache_sanitizes_private_fields()
     test_claude_oauth_token_prefers_macos_keychain_over_credentials_file()
     test_claude_oauth_token_keychain_miss_falls_back_to_credentials_file()
+    test_claude_online_expired_token_is_not_fetched_and_says_why()
+    test_claude_online_429_follows_retry_after_and_is_logged()
+    test_claude_online_backoff_without_retry_after_uses_default()
+    test_claude_online_default_ttl_reaches_the_loader()
+    test_claude_online_history_is_trimmed_to_30_days_and_read_from_tail()
     print("ok")
