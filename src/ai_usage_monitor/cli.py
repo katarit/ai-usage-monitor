@@ -6,7 +6,7 @@ import sys
 import time
 from pathlib import Path
 
-from .claude_online import load_claude_online_usage
+from .claude_online import DEFAULT_TTL_SECONDS, load_claude_online_usage
 from .codex_reset_credits import load_codex_reset_credits
 from .providers import default_claude_provider, default_codex_provider, summarize
 from .render import render_json, render_text
@@ -72,8 +72,12 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--claude-online-ttl",
         type=int,
-        default=60,
-        help="Seconds to cache Claude online usage responses. Default: 60.",
+        default=DEFAULT_TTL_SECONDS,
+        help=(
+            f"Seconds to cache Claude online usage responses. Default: {DEFAULT_TTL_SECONDS}. "
+            "About 28 requests per hour per token were sustained in measurements; "
+            "values below about 130 are likely to hit HTTP 429."
+        ),
     )
     parser.add_argument(
         "--codex-reset-credits",
