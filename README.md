@@ -8,7 +8,9 @@ Default usage is optimized for one-person local operation. Claude Code quota per
 
 ### Version
 
-Current version: `1.1.3`
+Current version: `1.1.4`
+
+`1.1.4` fixes the Claude quota-end prediction and the `quota changed` age. The Claude online usage endpoint returns `resets_at` with sub-second jitter on every fetch, and the monitor compared reset times exactly, so earlier snapshots never matched the current window: the predicted end was never shown and `quota changed` reported the latest fetch instead of when the percentage actually moved. Reset times are now compared to the minute.
 
 `1.1.3` makes the Claude online quota usable on macOS and finishes the `1.1.1` freshness fix. `run.cmd` still passed `--claude-online-ttl 300`, so the `5 hours`/`1 week` percentages could lag up to 5 minutes; the launcher now leaves the 60-second default in place. On macOS, where Claude Code stores its login in the Keychain instead of a credentials file, the monitor now reads the token from the Keychain. A `run.command` launcher is added for macOS.
 
@@ -276,7 +278,9 @@ MIT License. See `LICENSE`.
 
 ### バージョン
 
-現在のバージョン: `1.1.3`
+現在のバージョン: `1.1.4`
+
+`1.1.4` では Claude の枯渇予測と `quota changed` の経過時間を修正しました。Claude online usage endpoint は取得のたびに `resets_at` を1秒未満ずらして返しますが、モニターはリセット時刻を完全一致で比べていたため、過去のスナップショットが同じウィンドウと判定されず、予測が一度も表示されず、`quota changed` も％が実際に動いた時刻ではなく直近の取得時刻を示していました。リセット時刻を分単位で比べるようにしました。
 
 `1.1.3` では macOS で Claude online quota を使えるようにし、`1.1.1` の freshness 修正を完了しました。`run.cmd` が `--claude-online-ttl 300` を渡し続けていたため `5 hours`/`1 week` の％反映が最大5分遅れていましたが、launcher から指定を外し既定の 60 秒が効くようにしました。macOS の Claude Code は login を credentials file ではなく Keychain に保存するため、Keychain から token を読むようにしました。macOS 用の launcher `run.command` を追加しました。
 

@@ -89,6 +89,30 @@ def test_claude_online_quota_takes_priority_over_newer_statusline_snapshot():
     assert summary.plan_type == "pro"
 
 
+def test_claude_online_reset_jitter_keeps_prediction_and_quota_change_age():
+    now = utc_now()
+    reset = (now + timedelta(hours=3)).replace(second=0, microsecond=0)
+
+    def online(minutes_ago, used, jitter_ms):
+        return RateLimitSnapshot(
+            "Claude online usage endpoint",
+            now - timedelta(minutes=minutes_ago),
+            [
+                RateLimitWindow("5h", used, resets_at=reset + timedelta(milliseconds=jitter_ms)),
+                RateLimitWindow("week", 60.0, resets_at=reset + timedelta(days=2, milliseconds=jitter_ms)),
+            ],
+            "pro",
+            {"rate_limits": "online", "context_window": "local transcript"},
+        )
+
+    snapshots = [online(20, 30.0, -450), online(10, 40.0, 420), online(5, 40.0, -170), online(0, 40.0, 310)]
+
+    summary = summarize("Claude Code", [], 0, None, [], snapshots)
+
+    assert summary.rate_limits[0].predicted_end is not None
+    assert "quota changed 10m ago" in summary.source_status
+
+
 def test_codex_projects_quota_when_token_count_moves_before_quota_refresh():
     reset = int((utc_now() + timedelta(hours=4)).timestamp())
     rows = [
